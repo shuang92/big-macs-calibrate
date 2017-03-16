@@ -98,10 +98,10 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
         print query
         lines = sqlcl.query(query).readlines()
         #print lines
-        print len(lines) - 1, 'STAR(S) FOUND'
-        print lines[0]
+        print len(lines) - 2, 'STAR(S) FOUND'
+        print lines[1]
 
-        returned_keys = re.split('\,',lines[0][:-1])
+        returned_keys = re.split('\,',lines[1][:-1])
         saveKeys = returned_keys[2:]
         print returned_keys
 
@@ -109,13 +109,13 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
         catalogStars = dict(zip(returned_keys,list([[] for x in returned_keys])))
         print catalogStars.keys()
 
-        if lines[0] == 'N' or len(lines) -1  < 5:
+        if lines[1] == 'N' or len(lines) -2  < 5:
             print 'NO USABLE SDSS DATA FOUND, PROCEEDING' 
             matched = False
             returnCat = inputcat
         else:
             matched = True
-            for line in lines[1:]:
+            for line in lines[2:]:
                 line = line.replace('\n','')
                 res = re.split(',',line)
                 for i in range(len(res)): 
