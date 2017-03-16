@@ -808,7 +808,7 @@ def fit(table, input_info_unsorted, mag_locus,
               'legend.fontsize' : 12,
               'xtick.labelsize' : 10,
               'ytick.labelsize' : 10,
-              'scatter.s' : 0.1,
+#              'scatter.s' : 0.1,
                 'scatter.marker': 'o',
               'figure.figsize' : fig_size}
     pylab.rcParams.update(params_pylab)
