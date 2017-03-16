@@ -15,8 +15,8 @@ formats = ['csv','xml','html']
 astro_url='http://cas.sdss.org/astro/en/tools/search/x_sql.asp'
 public_url='http://cas.sdss.org/public/en/tools/search/x_sql.asp'
 
-astro_url='http://skyserver.sdss3.org/dr8/en/tools/search/x_sql.asp'
-public_url='http://skyserver.sdss3.org/dr8/en/tools/search/x_sql.asp'
+astro_url='http://skyserver.sdss.org/dr13/en/tools/search/x_results.aspx?searchtool=SQL&'
+public_url='http://skyserver.sdss.org/dr13/en/tools/search/x_results.aspx?searchtool=SQL&'
 
 
 default_url=astro_url
@@ -42,7 +42,7 @@ def query(sql,url=default_url,fmt=default_fmt):
     import urllib
     fsql = filtercomment(sql)
     params = urllib.urlencode({'cmd': fsql, 'format': fmt})
-    return urllib.urlopen(url+'?%s' % params)    
+    return urllib.urlopen(url+params)    
 
 def write_header(ofp,pre,url,qry):
     import  time
