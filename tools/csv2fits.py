@@ -3,7 +3,7 @@
 # to convert a csv file to a table fits file.
 # usage: fits2csv.py cvsname.cvs [-c col1,col2,col3] fitsname.fits
 # arguments:
-# 	-c 	specify columns in the cvs file
+# 	-c 	specify columns in the csv file
 # 		default = all columns
 #
 
