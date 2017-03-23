@@ -1,5 +1,6 @@
 
-##SDSS query:
+## SDSS query:
+## http://skyserver.sdss.org/dr13/en/tools/search/sql.aspx
 select ra,dec,
 psfMag_u - extinction_u + -0.04 as psfMagCorr_u,
 psfMag_g - extinction_g + 0.00 as psfMagCorr_g,
