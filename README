@@ -60,6 +60,10 @@ e.g., setenv PYTHONPATH $BIGMACS:PYTHONPATH (tcsh shell)
       PYTHONPATH=$BIGMACS:PYTHONPATH
       export PYTHONPATH  
 
+#3
+add Casjobs Path
+export CasJobs='/path/to/casjobs/casjobs.jar' (bash shell)
+
 =========================================================================
 
 Usage:
