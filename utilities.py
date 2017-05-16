@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-import sys, pyfits, os.path, pylab, string, re, time
+import sys, os.path, pylab, string, re, time
+import astropy.io.fits as pyfits
 from glob import glob
 from copy import copy
 import scipy
@@ -82,7 +83,7 @@ def synth(p,spectra,filters,show=False):
 def cas_locus(fits=True):
 
     if fits:
-        import pyfits
+        import astropy.io.fits as pyfits
         locus_list_mag = pyfits.open(os.environ['BIGMACS'] + '/lociCAS.fits')['STDTAB']
     else:
         import pickle
