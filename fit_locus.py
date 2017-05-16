@@ -4,7 +4,8 @@
 if __name__ != '__main__':
     print 'importing modules'
     import os, re, string, pylab
-    import pyfits, random, scipy, commands, anydbm
+    import random, scipy, commands, anydbm
+    import astropy.io.fits as pyfits
     from scipy import linalg
     from scipy import optimize
     from glob import glob
@@ -34,7 +35,7 @@ def fix_kpno():
 
 
 def join_cats(cs,outputfile):
-    import pyfits
+    import astropy.io.fits as pyfits
     tables = {}
     i = 0
     cols = []
@@ -1563,7 +1564,8 @@ if __name__ == '__main__':
 
     print 'importing libraries'
     import os, re, string, pylab
-    import pyfits, random, scipy, commands, anydbm
+    import random, scipy, commands, anydbm
+    import astropy.io.fits as pyfits
     from scipy import linalg
     from scipy import optimize
     from glob import glob
