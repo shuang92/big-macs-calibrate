@@ -134,7 +134,7 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
         import sqlcl
         query = 'select ' + reduce(lambda x,y: x + ',' + y, keys) + ' into big_macs_db from fGetNearbyObjEq(' + str(RA) + ',' + str(DEC) + ',' + str(RADIUS) + ' ) nb '
         query += 'inner join ObjectThin o on o.objid=nb.objid and o.nDetections>1 and ' + reduce(lambda x,y: x + ' and ' + y,wherekeys)
-	    query += 'inner join MeanObject m on o.objid=m.objid and o.uniquePspsOBid=m.uniquePspsOBid '
+	query += 'inner join MeanObject m on o.objid=m.objid and o.uniquePspsOBid=m.uniquePspsOBid '
     	print query
 
         ref_cat_name = sqlcl.pan_query(query, RA, DEC)
