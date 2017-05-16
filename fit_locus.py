@@ -121,7 +121,48 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
                 for i in range(len(res)): 
                     catalogStars[returned_keys[i]].append(float(res[i]))  
 
+    elif survey == 'PanSTARRS':
+        colors = ['g','r','i','z','y']   
 
+        ''' includes conversion to Pogson magnitudes from luptitudes '''
+        keys = ['o.raMean as ra','o.decMean as dec']
+        keys += ['m.%(color)sMeanPSFMAG  as psfMagCorr_%(color)s' % {'color':color} for color in colors ] 
+        keys += ['m.%(color)sMeanKronMag' % {'color':color} for color in colors ]
+        keys += ['m.%(color)sMeanPSFMagErr as psfMagErr_%(color)s' % {'color':color} for color in colors ] 
+        wherekeys = ['n%(color)s > 0 ' % {'color':color} for color in colors ] 
+        
+        import sqlcl
+        query = 'select ' + reduce(lambda x,y: x + ',' + y, keys) + ' into big_macs_db from fGetNearbyObjEq(' + str(RA) + ',' + str(DEC) + ',' + str(RADIUS) + ' ) nb '
+        query += 'inner join ObjectThin o on o.objid=nb.objid and o.nDetections>1 and ' + reduce(lambda x,y: x + ' and ' + y,wherekeys)
+	    query += 'inner join MeanObject m on o.objid=m.objid and o.uniquePspsOBid=m.uniquePspsOBid '
+    	print query
+
+        ref_cat_name = sqlcl.pan_query(query, RA, DEC)
+#        ref_cat_name = "cat_pan.csv"
+        with open(ref_cat_name) as ref_cat:
+            lines = ref_cat.readlines()
+        print len(lines) - 1, 'STAR(S) FOUND'
+        print lines[0]
+
+        returned_keys = re.split('\,',lines[0][:-1])
+        saveKeys = returned_keys[2:]
+
+        ''' make a array with empty list with an entry for each key '''
+        catalogStars = dict(zip(returned_keys,list([[] for x in returned_keys])))
+        print catalogStars.keys()
+
+        if lines[0] == 'N' or len(lines) -1  < 5:
+            print 'NO USABLE PanSTARRS DATA FOUND, PROCEEDING' 
+            matched = False
+            returnCat = inputcat
+        else:
+            matched = True
+            for line in lines[1:]:
+                line = line.replace('\n','')
+                res = re.split(',',line)
+                for i in range(len(res)): 
+                    catalogStars[returned_keys[i]].append(float(res[i]))
+               
     elif survey == '2MASS':
 
         coordinate = str(RA) + '+' + str(DEC)
@@ -463,7 +504,11 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     if addSDSS:
         fulltable, foundSDSS, necessary_columns = get_survey_stars(fulltable, racol, deccol, necessary_columns, EBV, survey='SDSS', sdssUnit=sdssUnit)
         if foundSDSS: fitSDSS = True
-
+            
+    foundPanSTARRS = 0 
+    if addPanSTARRS:
+        fulltable, foundPanSTARRS, necessary_columns = get_survey_stars(fulltable, racol, deccol, necessary_columns, EBV, survey='PanSTARRS')
+            
     found2MASS = 0 
     if add2MASS:
         fulltable, found2MASS, necessary_columns = get_survey_stars(fulltable, racol, deccol, necessary_columns, EBV, survey='2MASS')
@@ -503,7 +548,18 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
             for i in range(len(input_info)):                
                 if input_info[i]['mag'] != 'psfPogCorr_z': 
                     input_info[i]['HOLD_VARY'] = 'VARY'
+                    
+    if addPanSTARRS and foundPanSTARRS:
+        for i in range(len(input_info)):
+            input_info[i]['HOLD_VARY'] = 'VARY'
 
+        panstarrs_info = [{'mag':'psfPogCorr_' + c, 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': 'psfPogErr_' + c, 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r','i','z','y'] ]
+
+        for filt_dict in panstarrs_info:
+            ''' avoid duplicate filters -- will override '''
+            if filt_dict['mag'] not in [f['mag'] for f in input_info]:
+                input_info += [filt_dict]
+                
     if add2MASS and found2MASS:
         ''' if no SDSS, see if there are 2MASS matches '''
         #input_info = utilities.parse_columns(columns_description,fitSDSS=False,noHoldExcept2MASS=True)
@@ -663,11 +719,11 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     os.system('rm ' + plots_directory + '/qc_*png')                                                    
 
     ''' first calibrate redder filters '''
-    results, sdss_mags, SeqNr = fit(table, red_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, live_plot=live_plot, number_of_plots=number_of_plots)
+    results, ref_mags, SeqNr = fit(table, red_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, live_plot=live_plot, number_of_plots=number_of_plots)
 
     zps_dict_all, zps_dict_all_err, cal_type = update_zps(zps_dict_all,zps_dict_all_err,cal_type,results,'REDDER')
 
-    print len(sdss_mags), len(SeqNr)
+    print len(ref_mags), len(SeqNr)
 
 
 
@@ -675,24 +731,24 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
 
     ''' now calibrate using only bright u'-band stars '''
     if len(blue_input_info):
-        #pylab.scatter(sdss_mags[:,1], sdss_mags[:,1] - sdss_mags[:,2])
+        #pylab.scatter(ref_mags[:,1], ref_mags[:,1] - ref_mags[:,2])
         #pylab.show()
 
 
         ''' select main sequence '''
-        #gmr = sdss_mags[:,1] - sdss_mags[:,2]
+        #gmr = ref_mags[:,1] - ref_mags[:,2]
         #mask = (gmr > 0.2) * (gmr < 0.6) 
 
         if False:
             mask = gmr < 0.5                        
             SeqNr = SeqNr[mask]
-            sdss_mags = sdss_mags[mask]
+            ref_mags = ref_mags[mask]
                                                     
-            #g = sdss_mags[:,1]
+            #g = ref_mags[:,1]
             #mask = g < 17.5
             #SeqNr = SeqNr[mask]
             #print mask
-            #sdss_mags = sdss_mags[mask]
+            #ref_mags = ref_mags[mask]
                                                     
             not_ms = [] 
             for ele in scipy.arange(len(table)):
@@ -703,7 +759,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
                     not_ms.append(ele)
             not_ms = scipy.array(not_ms)
 
-        gmr = sdss_mags[:,1] - sdss_mags[:,2]
+        gmr = ref_mags[:,1] - ref_mags[:,2]
         print gmr
         #table = table[SeqNr]
         table.field(blue_input_info[0]['mag'])[gmr > 0.5] = 99.
@@ -729,7 +785,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
 
         print red_input_info
 
-        results, sdss_mags, SeqNr = fit(table, red_input_info + blue_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None,printall=True, number_of_plots=number_of_plots)
+        results, ref_mags, SeqNr = fit(table, red_input_info + blue_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None,printall=True, number_of_plots=number_of_plots)
 
         print results
 
@@ -837,17 +893,17 @@ def fit(table, input_info_unsorted, mag_locus,
     ''' for each point in locus, make a list of the locus in each color (locus has same number of points in each color) '''
     ''' just a rearrangement '''
     locus_list = []
-    sdss_locus_list = []
+    ref_locus_list = []
     for j in range(number_locus_points):
         o = []
-        o_sdss = []
+        o_ref = []
         for c in input_info:
             print mag_locus[j].keys()
             o.append(mag_locus[j][c['mag']])
         for c in ['USDSS','GSDSS','RSDSS','ISDSS','ZSDSS']:
-            o_sdss.append(mag_locus[j][c])
+            o_ref.append(mag_locus[j][c])
         locus_list.append(o)
-        sdss_locus_list.append(o_sdss)
+        ref_locus_list.append(o_ref)
 
     results = {} 
 
@@ -881,7 +937,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
         ''' make matrix with a full set of locus points for each star '''    
         locus_matrix = scipy.array(number_all_stars*[locus_list])
-        sdss_locus_matrix = scipy.array(number_all_stars*[sdss_locus_list])
+        ref_locus_matrix = scipy.array(number_all_stars*[ref_locus_list])
         #print locus_matrix.shape
 
         ''' assemble matricies to make instrumental measured bands '''
@@ -920,7 +976,7 @@ def fit(table, input_info_unsorted, mag_locus,
         A_err = A_err[good_bands_per_star>=min_bands_per_star]
         A_err[A_err<min_err] = min_err 
         locus_matrix = locus_matrix[good_bands_per_star>=min_bands_per_star]
-        sdss_locus_matrix = sdss_locus_matrix[good_bands_per_star>=min_bands_per_star]
+        ref_locus_matrix = ref_locus_matrix[good_bands_per_star>=min_bands_per_star]
 
         ''' if a bootstrap iteration, bootstrap with replacement '''
         if string.find(iteration,'bootstrap') != -1:
@@ -938,7 +994,7 @@ def fit(table, input_info_unsorted, mag_locus,
             A_band = scipy.array([A_band[i] for i in random_indices])             
             A_err = scipy.array([A_err[i] for i in random_indices])
             locus_matrix = scipy.array([locus_matrix[i] for i in random_indices])
-            sdss_locus_matrix = scipy.array([sdss_locus_matrix[i] for i in random_indices])
+            ref_locus_matrix = scipy.array([ref_locus_matrix[i] for i in random_indices])
         
         bands = A_band 
         bands_err = A_err
@@ -1017,8 +1073,8 @@ def fit(table, input_info_unsorted, mag_locus,
 
                 ''' compute SDSS apparent magnitudes of stars ''' 
                 norm = scipy.swapaxes(scipy.array([spectrum_normalization.tolist()]*5),0,1)
-                sdss_locus_mags = sdss_locus_matrix[scipy.arange(len(match_locus_index)),match_locus_index,:]
-                sdss_mags =  norm + sdss_locus_mags 
+                ref_locus_mags = ref_locus_matrix[scipy.arange(len(match_locus_index)),match_locus_index,:]
+                ref_mags =  norm + ref_locus_mags 
 
                 stat_tot = chi_squared_total #select_diff.sum()
 
@@ -1051,8 +1107,8 @@ def fit(table, input_info_unsorted, mag_locus,
                     print redchi.shape
                     print end_of_locus.shape
                     print len(bands) 
-                    print sdss_mags.shape
-                    return select_diff, dist, redchi, end_of_locus, len(bands), sdss_mags 
+                    print ref_mags.shape
+                    return select_diff, dist, redchi, end_of_locus, len(bands), ref_mags 
                 else: return stat_tot
 
             def plot_progress(pars,stat_tot=None,savefig=None):
@@ -1071,7 +1127,7 @@ def fit(table, input_info_unsorted, mag_locus,
                 oa = copy(input_info)
                 oa.sort(sort_wavelength)
 
-                oa_no_sdss = filter(lambda x: string.find(x['mag'],'psfMag') == -1, oa)
+                oa_no_ref = filter(lambda x: string.find(x['mag'],'psfMag') == -1, oa)
 
 
                 def plot_combinations(input):
@@ -1090,7 +1146,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
 
                 if savefig is not None:
-                    index_list = plot_combinations(oa_no_sdss)
+                    index_list = plot_combinations(oa_no_ref)
                     index_list += plot_combinations(oa)
 
                 else: 
@@ -1308,7 +1364,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
             #[zps_hold[a['mag']] for a in hold_input_info] + 
 
-            residuals,dist,redchi,end_of_locus, num, sdss_mags = errfunc(pars=list(out),residuals=True)
+            residuals,dist,redchi,end_of_locus, num, ref_mags = errfunc(pars=list(out),residuals=True)
 
             #print dist
             #print 'finished'
@@ -1324,12 +1380,12 @@ def fit(table, input_info_unsorted, mag_locus,
                 bands = bands[residuals < resid_thresh]
                 bands_err = bands_err[residuals < resid_thresh]
                 locus_matrix = locus_matrix[residuals < resid_thresh]
-                sdss_locus_matrix = sdss_locus_matrix[residuals < resid_thresh]
+                ref_locus_matrix = ref_locus_matrix[residuals < resid_thresh]
                 SeqNr = SeqNr[residuals < resid_thresh]
                 good = good[residuals < resid_thresh]
                 end_of_locus = end_of_locus[residuals < resid_thresh]
                 dist = dist[residuals < resid_thresh]
-                sdss_mags = sdss_mags[residuals < resid_thresh]
+                ref_mags = ref_mags[residuals < resid_thresh]
 
             else: 
 
@@ -1337,34 +1393,34 @@ def fit(table, input_info_unsorted, mag_locus,
                 bands = bands[residuals < resid_thresh]
                 bands_err = bands_err[residuals < resid_thresh]
                 locus_matrix = locus_matrix[residuals < resid_thresh]
-                sdss_locus_matrix = sdss_locus_matrix[residuals < resid_thresh]
+                ref_locus_matrix = ref_locus_matrix[residuals < resid_thresh]
                 SeqNr = SeqNr[residuals < resid_thresh]
                 good = good[residuals < resid_thresh]
                 end_of_locus = end_of_locus[residuals < resid_thresh]
                 dist = dist[residuals < resid_thresh]
-                sdss_mags = sdss_mags[residuals < resid_thresh]
+                ref_mags = ref_mags[residuals < resid_thresh]
 
                 ''' first filter on distance '''
                 bands = bands[dist < 3]
                 bands_err = bands_err[dist < 3]
                 locus_matrix = locus_matrix[dist < 3]
-                sdss_locus_matrix = sdss_locus_matrix[dist < 3]
+                ref_locus_matrix = ref_locus_matrix[dist < 3]
                 SeqNr = SeqNr[dist < 3]
                 good = good[dist < 3]
                 residuals = residuals[dist < 3]
                 end_of_locus = end_of_locus[dist < 3]
-                sdss_mags = sdss_mags[dist < 3]
+                ref_mags = ref_mags[dist < 3]
 
                 if True:
                     ''' filter on end of locus '''                      
                     bands = bands[end_of_locus]
                     bands_err = bands_err[end_of_locus]
                     locus_matrix = locus_matrix[end_of_locus]
-                    sdss_locus_matrix = sdss_locus_matrix[end_of_locus]
+                    ref_locus_matrix = ref_locus_matrix[end_of_locus]
                     SeqNr = SeqNr[end_of_locus]
                     #print end_of_locus[:,0]
                     good = good[end_of_locus]
-                    sdss_mags = sdss_mags[end_of_locus]
+                    ref_mags = ref_mags[end_of_locus]
 
             #print number_good_stars, len(locus_matrix)
 
@@ -1390,7 +1446,7 @@ def fit(table, input_info_unsorted, mag_locus,
                     pinit = scipy.array(out) + scipy.array([random.random()*1.0 for p in pinit])
                     pinit = out 
                     out = scipy.optimize.fmin(errfunc,pinit,maxiter=10000,args=()) 
-                    residuals,dist,redchi,end_of_locus, num, sdss_mags  = errfunc(out,savefig=iteration+'_'+outliers+'.png',residuals=True)
+                    residuals,dist,redchi,end_of_locus, num, ref_mags  = errfunc(out,savefig=iteration+'_'+outliers+'.png',residuals=True)
                     print out
             else:
                 print 'NO OUTLYING STARS OR STARS MATCHING BLUE END OF LOCUS, PROCEEDING'
@@ -1398,7 +1454,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
 
         results[iteration] = dict(zip([a['mag'] for a in input_info],([zps_hold[a['mag']] for a in hold_input_info] + out.tolist())))
-        results['sdss_mags_' + iteration] = copy(sdss_mags)
+        results['ref_mags_' + iteration] = copy(ref_mags)
         results['SeqNr_' + iteration] = copy(SeqNr)
 
 
@@ -1419,7 +1475,7 @@ def fit(table, input_info_unsorted, mag_locus,
         l = []
         print results.keys()
         for r in results.keys():
-            if r != 'full' and r != 'redchi' and r != 'num' and string.find(r,'sdss_mags') == -1 and string.find(r,'SeqNr') == -1:
+            if r != 'full' and r != 'redchi' and r != 'num' and string.find(r,'ref_mags') == -1 and string.find(r,'SeqNr') == -1:
                 print r, key
                 l.append(results[r][key])
         #print key+':', scipy.std(l), 'mag'
@@ -1454,7 +1510,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
         if results.has_key('full') and save_results is not None: save_results(save_file,results, errors)
                                                               
-    return results, results['sdss_mags_full'], results['SeqNr_full']
+    return results, results['ref_mags_full'], results['SeqNr_full']
 
 if __name__ == '__main__':
     #all(subarudir,cluster,DETECT_FILTER,AP_TYPE,magtype)
@@ -1480,6 +1536,7 @@ if __name__ == '__main__':
     parser.add_option("-n","--night",help="night",default=None)
     parser.add_option("-s","--addSDSSgriz",action='store_true',help="automatically search for and add SDSS griz stellar photometry, if available")
     parser.add_option("-j","--add2MASSJ",action='store_true',help="automatically search for and add 2MASS J stellar photometry, if available")
+    parser.add_option("-a","--addPanSTARRS",action='store_true',help="automatically search for and add PanSTARRS griz stellar photometry, if available")
     parser.add_option("-w","--numberofplots",help="number of plots to make (default: 10)",default=10)
     parser.add_option("-u","--sdssUnit",help="run SDSS unit test (only works if in coverage)",action='store_true')
     
@@ -1516,4 +1573,4 @@ if __name__ == '__main__':
 
     print options.liveplot
     
-    run(options.file,options.columns,output_directory=options.output,plots_directory=options.plots,extension=options.extension,racol=options.racol,deccol=options.deccol,bootstrap_num=options.bootstrap,live_plot=options.liveplot, add2MASS=options.add2MASSJ, addSDSS=options.addSDSSgriz,number_of_plots=options.numberofplots, sdssUnit=options.sdssUnit)    
+    run(options.file,options.columns,output_directory=options.output,plots_directory=options.plots,extension=options.extension,racol=options.racol,deccol=options.deccol,bootstrap_num=options.bootstrap,live_plot=options.liveplot, add2MASS=options.add2MASSJ, addSDSS=options.addSDSSgriz, addPanSTARRS=options.addPanSTARRS, number_of_plots=options.numberofplots, sdssUnit=options.sdssUnit)    
