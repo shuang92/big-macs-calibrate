@@ -44,6 +44,128 @@ def query(sql,url=default_url,fmt=default_fmt):
     params = urllib.urlencode({'cmd': fsql, 'format': fmt})
     return urllib.urlopen(url+params)    
 
+def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
+    import json, requests
+    '''
+    Send a line-of-sight reddening query to the Argonaut web server.
+    
+    Inputs:
+      lon, lat: longitude and latitude, in degrees.
+      coordsys: 'gal' for Galactic, 'equ' for Equatorial (J2000).
+      mode: 'full', 'lite' or 'sfd'
+    
+    In 'full' mode, outputs a dictionary containing, among other things:
+      'distmod':    The distance moduli that define the distance bins.
+      'best':       The best-fit (maximum proability density)
+                    line-of-sight reddening, in units of SFD-equivalent
+                    E(B-V), to each distance modulus in 'distmod.' See
+                    Schlafly & Finkbeiner (2011) for a definition of the
+                    reddening vector (use R_V = 3.1).
+      'samples':    Samples of the line-of-sight reddening, drawn from
+                    the probability density on reddening profiles.
+      'success':    1 if the query succeeded, and 0 otherwise.
+      'converged':  1 if the line-of-sight reddening fit converged, and
+                    0 otherwise.
+      'n_stars':    # of stars used to fit the line-of-sight reddening.
+      'DM_reliable_min':  Minimum reliable distance modulus in pixel.
+      'DM_reliable_max':  Maximum reliable distance modulus in pixel.
+    
+    Less information is returned in 'lite' mode, while in 'sfd' mode,
+    the Schlegel, Finkbeiner & Davis (1998) E(B-V) is returned.
+    '''
+    
+    url = 'http://argonaut.skymaps.info/gal-lb-query-light'
+    
+    payload = {'mode': mode}
+    
+    if coordsys.lower() in ['gal', 'g']:
+        payload['l'] = lon
+        payload['b'] = lat
+    elif coordsys.lower() in ['equ', 'e']:
+        payload['ra'] = lon
+        payload['dec'] = lat
+    else:
+        raise ValueError("coordsys '{0}' not understood.".format(coordsys))
+    
+    headers = {'content-type': 'application/json'}
+    
+    r = requests.post(url, data=json.dumps(payload), headers=headers)
+    
+    try:
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        print('Response received from Argonaut:')
+        print(r.text)
+        raise e
+    
+    ebv = json.loads(r.text)
+    return ebv['EBV_SFD']
+
+def pan_catalog_cut(cat_raw_name, RA, DEC):
+    "Apply several cuts and extinction correction to panstarrs catalog"
+    from astropy.table import Table
+    import itertools, numpy as np
+        
+    catalog_raw = Table.read(cat_raw_name, format='ascii.csv', guess=False)
+    N = len(catalog_raw) 
+    
+    colors = ['g','r','i','z','y']
+
+    psfMagCorrs = ['psfMagCorr_' + c for c in colors]
+    KronMags = [c + 'MeanKronMag' for c in colors] 
+    
+
+    ## separate stars from galaxies
+    ## https://confluence.stsci.edu/display/PANSTARRS/How+to+separate+stars+and+galaxies
+    flag = np.ones(N, dtype=bool)
+    for psfMag,KronMag in zip(psfMagCorrs,KronMags):
+        	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] < 0.05)
+        	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] > -0.2)
+        	#flag *= (catalog_raw[psfMag] > 14)
+        	#flag *= (catalog_raw[psfMag] < 18) 
+    
+    index = np.where(flag==False)[0]
+    catalog_raw.remove_rows(index)    ## remove galaxies
+    
+    for KronMag in KronMags:
+    	catalog_raw.remove_column(KronMag)  ## remove KronMags
+
+    ## dust extinction correction: http://argonaut.skymaps.info/
+    ## coefficients: Schlafly & Finkbeiner, 2011
+    EBV = panstarrs_ebv(RA,DEC,mode='sfd')
+    coeffs = {'g':3.172, 'r':2.271, 'i':1.682, 'z':1.322, 'y':1.087}
+    for psfMag,color in zip(psfMagCorrs,colors):
+        catalog_raw[psfMag] += EBV * coeffs[color]
+        print 'dust extinction for PanSTARRS band ' + color + ':', EBV*coeffs[color]
+
+    ## use psfMags as Pogson Mags
+    for c in colors:
+        catalog_raw['psfPogCorr_'+c] = catalog_raw['psfMagCorr_'+c]
+        catalog_raw['psfPogErr_'+c] = catalog_raw['psfMagErr_'+c]
+
+    cat_pan_name = "cat_pan.csv"
+    catalog_raw.write(cat_pan_name,format='ascii.csv') 
+    return cat_pan_name
+
+def pan_query(query, RA, DEC):
+    "Run panstarrs query via Casjobs"
+    import os, glob
+
+    bashCommand = []
+    bashCommand.append('rm *.csv')
+    bashCommand.append('java -jar ${CasJobs} run ' + "\'" + query + "\'")
+    bashCommand.append('java -jar ${CasJobs} extract -b big_macs_db -type csv -d -F')
+    bashCommand.append('java -jar ${CasJobs} execute -t mydb/1 \"drop table big_macs_db\" ')
+
+    for c in bashCommand:
+        os.system(c)
+
+    cat_raw_name = glob.glob("./*.csv")[0]
+    cat_pan_name = pan_catalog_cut(cat_raw_name, RA, DEC)
+
+    return cat_pan_name
+
+
 def write_header(ofp,pre,url,qry):
     import  time
     ofp.write('%s SOURCE: %s\n' % (pre,url))
