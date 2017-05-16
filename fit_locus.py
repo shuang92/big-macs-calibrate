@@ -72,7 +72,8 @@ def join_cats(cs,outputfile):
 
 def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SDSS', sdssUnit=False): 
 
-    import scipy, pyfits, math
+    import scipy, math
+    import astropy.io.fits as pyfits
 
     RA, DEC, RADIUS = get_catalog_parameters(inputcat, racol, deccol) 
 
