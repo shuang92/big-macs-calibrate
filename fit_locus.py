@@ -478,7 +478,7 @@ def get_catalog_parameters(fulltable, racol, deccol):
     return RA, DEC, RADII.max() 
 
 
-def run(file,columns_description,output_directory=None,plots_directory=None,extension='OBJECTS',racol=None,deccol=None,end_of_locus_reject=1,plot_iteration_increment=50, min_err=0.02, bootstrap_num=0, snpath=None, night=None, run=None, prefix='',data_from_sdss=False, live_plot=False, addSDSS=False, number_of_plots=10, add2MASS=False, sdssUnit=False):
+def run(file,columns_description,output_directory=None,plots_directory=None,extension='OBJECTS',racol=None,deccol=None,end_of_locus_reject=1,plot_iteration_increment=50, min_err=0.02, bootstrap_num=0, snpath=None, night=None, run=None, prefix='',data_from_sdss=False, live_plot=False, addSDSS=False, addPanSTARRS=False, add2MASS=False, number_of_plots=10, sdssUnit=False):
 
     try: 
         extension = int(extension)
