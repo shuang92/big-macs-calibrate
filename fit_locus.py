@@ -264,7 +264,7 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
                 cols.append(pyfits.Column(name=column_name,format='1E',array=array))
 
             coldefs = pyfits.ColDefs(cols)
-            hdu_new = pyfits.new_table(coldefs)
+            hdu_new = pyfits.TalbeHDU.from_columns(coldefs)
 
             matchedStars = 0
 
