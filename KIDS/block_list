@@ -79,3 +79,21 @@ RA: 135 .. 137 degs
 DEC: 2 .. 4 degs
 FOV: 4 square degs
 stars: 5150
+
+#9
+RA: 40 .. 42 degs
+DEC: -34 .. -32 degs
+FOV: 4 square degs
+stars: 3051
+
+#9
+RA: 40 .. 42 degs
+DEC: -34 .. -32 degs
+FOV: 4 square degs
+stars: 3051
+
+#10
+RA: 350 .. 352 degs
+DEC: -34 .. -32 degs
+FOV: 4 square degs
+stars: 6393
