@@ -128,15 +128,15 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
 
         ''' includes conversion to Pogson magnitudes from luptitudes '''
         keys = ['o.raMean as ra','o.decMean as dec']
-        keys += ['m.%(color)sMeanPSFMAG  as psfMagCorr_%(color)s' % {'color':color} for color in colors ] 
-        keys += ['m.%(color)sMeanKronMag' % {'color':color} for color in colors ]
-        keys += ['m.%(color)sMeanPSFMagErr as psfMagErr_%(color)s' % {'color':color} for color in colors ] 
+        keys += ['m.%(color)sFPSFMAG  as psfMagCorr_%(color)s' % {'color':color} for color in colors ] 
+        keys += ['m.%(color)sFKronMag' % {'color':color} for color in colors ]
+        keys += ['m.%(color)sFPSFMagErr as psfMagErr_%(color)s' % {'color':color} for color in colors ] 
         wherekeys = ['n%(color)s > 0 ' % {'color':color} for color in colors ] 
         
         import sqlcl
         query = 'select ' + reduce(lambda x,y: x + ',' + y, keys) + ' into big_macs_db from fGetNearbyObjEq(' + str(RA) + ',' + str(DEC) + ',' + str(RADIUS) + ' ) nb '
         query += 'inner join ObjectThin o on o.objid=nb.objid and o.nDetections>1 and ' + reduce(lambda x,y: x + ' and ' + y,wherekeys)
-	query += 'inner join MeanObject m on o.objid=m.objid and o.uniquePspsOBid=m.uniquePspsOBid '
+	query += 'inner join ForcedMeanObject m on o.objid=m.objid' 
     	print query
 
         ref_cat_name = sqlcl.pan_query(query, RA, DEC)
@@ -264,7 +264,7 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
                 cols.append(pyfits.Column(name=column_name,format='1E',array=array))
 
             coldefs = pyfits.ColDefs(cols)
-            hdu_new = pyfits.TalbeHDU.from_columns(coldefs)
+            hdu_new = pyfits.TableHDU.from_columns(coldefs)
 
             matchedStars = 0
 
@@ -479,7 +479,7 @@ def get_catalog_parameters(fulltable, racol, deccol):
     return RA, DEC, RADII.max() 
 
 
-def run(file,columns_description,output_directory=None,plots_directory=None,extension='OBJECTS',racol=None,deccol=None,end_of_locus_reject=1,plot_iteration_increment=50, min_err=0.02, bootstrap_num=0, snpath=None, night=None, run=None, prefix='',data_from_sdss=False, live_plot=False, addSDSS=False, addPanSTARRS=False, add2MASS=False, number_of_plots=10, sdssUnit=False):
+def run(file,columns_description,output_directory=None,plots_directory=None,extension='OBJECTS',racol=None,deccol=None,end_of_locus_reject=1,plot_iteration_increment=50, min_err=0.02, bootstrap_num=0, snpath=None, night=None, run=None, prefix='',data_from_sdss=False, live_plot=False, addSDSS=False, addPanSTARRS=False, number_of_plots=10, add2MASS=False, sdssUnit=False):
 
     try: 
         extension = int(extension)
@@ -866,8 +866,8 @@ def fit(table, input_info_unsorted, mag_locus,
               'legend.fontsize' : 12,
               'xtick.labelsize' : 10,
               'ytick.labelsize' : 10,
-#              'scatter.s' : 0.1,
-                'scatter.marker': 'o',
+              #'scatter.s' : 0.1,
+              #'scatter.marker': 'o',
               'figure.figsize' : fig_size}
     pylab.rcParams.update(params_pylab)
 
@@ -1434,6 +1434,7 @@ def fit(table, input_info_unsorted, mag_locus,
                 outliers = 'egregious outliers removed '# + str(resid_thresh)
                 number_good_stars = len(locus_matrix)
                 print str(number_good_stars), 'STARS LEFT'
+		exit()
             elif number_good_stars > len(locus_matrix) or len(filter(lambda x: x is False,end_of_locus.tolist())) > 0 :
                 print 'REFITTING AFTER REMOVING ' + str(number_good_stars - len(locus_matrix) ) + ' OUTLIERS AND STARS MATCHING BLUE END OF LOCUS'
                 number_good_stars = len(locus_matrix)

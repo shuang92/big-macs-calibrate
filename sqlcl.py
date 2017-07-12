@@ -112,7 +112,7 @@ def pan_catalog_cut(cat_raw_name, RA, DEC):
     colors = ['g','r','i','z','y']
 
     psfMagCorrs = ['psfMagCorr_' + c for c in colors]
-    KronMags = [c + 'MeanKronMag' for c in colors] 
+    KronMags = [c + 'FKronMag' for c in colors] 
     
 
     ## separate stars from galaxies
