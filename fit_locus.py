@@ -1434,7 +1434,6 @@ def fit(table, input_info_unsorted, mag_locus,
                 outliers = 'egregious outliers removed '# + str(resid_thresh)
                 number_good_stars = len(locus_matrix)
                 print str(number_good_stars), 'STARS LEFT'
-		exit()
             elif number_good_stars > len(locus_matrix) or len(filter(lambda x: x is False,end_of_locus.tolist())) > 0 :
                 print 'REFITTING AFTER REMOVING ' + str(number_good_stars - len(locus_matrix) ) + ' OUTLIERS AND STARS MATCHING BLUE END OF LOCUS'
                 number_good_stars = len(locus_matrix)
