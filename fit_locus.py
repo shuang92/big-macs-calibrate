@@ -787,7 +787,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
 
         print red_input_info
 
-        results, ref_mags, SeqNr = fit(table, red_input_info + blue_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None,printall=True, number_of_plots=number_of_plots)
+        results, ref_mags, SeqNr = fit(table, red_input_info + blue_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, live_plot=live_plot, number_of_plots=number_of_plots)
 
         print results
 
@@ -846,7 +846,6 @@ def fit(table, input_info_unsorted, mag_locus,
         save_bootstrap_plots=False, 
         live_plot=False,
         pre_zps=None,
-        printall=False,
         number_of_plots = 10,
         fast=True,
         publish=True            
