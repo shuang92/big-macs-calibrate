@@ -764,7 +764,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
         gmr = ref_mags[:,1] - ref_mags[:,2]
         print gmr
         #table = table[SeqNr]
-        table.field(blue_input_info[0]['mag'])[gmr > 0.5] = 99.
+        #table.field(blue_input_info[0]['mag'])[gmr > 0.5] = 99.
 
         print table.field(blue_input_info[0]['mag'])
         print SeqNr
