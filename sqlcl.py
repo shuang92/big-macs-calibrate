@@ -135,7 +135,7 @@ def pan_catalog_cut(cat_raw_name, RA, DEC):
     EBV = panstarrs_ebv(RA,DEC,mode='sfd')
     coeffs = {'g':3.172, 'r':2.271, 'i':1.682, 'z':1.322, 'y':1.087}
     for psfMag,color in zip(psfMagCorrs,colors):
-        catalog_raw[psfMag] += EBV * coeffs[color]
+        catalog_raw[psfMag] -= EBV * coeffs[color]
         print 'dust extinction for PanSTARRS band ' + color + ':', EBV*coeffs[color]
 
     ## use psfMags as Pogson Mags
