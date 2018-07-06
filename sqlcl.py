@@ -109,20 +109,19 @@ def pan_catalog_cut(cat_raw_name, RA, DEC):
     catalog_raw = Table.read(cat_raw_name, format='ascii.csv', guess=False)
     N = len(catalog_raw) 
     
-    colors = ['g','r','i','z','y']
+    #colors = ['g','r','i','z','y']
+    colors = ['r']
 
-    psfMagCorrs = ['psfMagCorr_' + c for c in colors]
+    psfMags = [c +'FPSFMag' for c in colors]
     KronMags = [c + 'FKronMag' for c in colors] 
     
 
     ## separate stars from galaxies
     ## https://confluence.stsci.edu/display/PANSTARRS/How+to+separate+stars+and+galaxies
     flag = np.ones(N, dtype=bool)
-    for psfMag,KronMag in zip(psfMagCorrs,KronMags):
+    for psfMag, KronMag in zip(psfMags, KronMags):
         	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] < 0.05)
         	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] > -0.2)
-        	#flag *= (catalog_raw[psfMag] > 14)
-        	#flag *= (catalog_raw[psfMag] < 18) 
     
     index = np.where(flag==False)[0]
     catalog_raw.remove_rows(index)    ## remove galaxies
@@ -134,18 +133,18 @@ def pan_catalog_cut(cat_raw_name, RA, DEC):
     ## coefficients: Schlafly & Finkbeiner, 2011
     EBV = panstarrs_ebv(RA,DEC,mode='sfd')
     coeffs = {'g':3.172, 'r':2.271, 'i':1.682, 'z':1.322, 'y':1.087}
-    for psfMag,color in zip(psfMagCorrs,colors):
+    for psfMag, color in zip(psfMags, colors):
         catalog_raw[psfMag] -= EBV * coeffs[color]
         print 'dust extinction for PanSTARRS band ' + color + ':', EBV*coeffs[color]
 
     ## use psfMags as Pogson Mags
-    for c in colors:
-        catalog_raw['psfPogCorr_'+c] = catalog_raw['psfMagCorr_'+c]
-        catalog_raw['psfPogErr_'+c] = catalog_raw['psfMagErr_'+c]
+    #for c in colors:
+    #    catalog_raw['psfPogCorr_'+c] = catalog_raw['psfMagCorr_'+c]
+    #    catalog_raw['psfPogErr_'+c] = catalog_raw['psfMagErr_'+c]
 
-    cat_pan_name = "cat_pan.csv"
-    catalog_raw.write(cat_pan_name,format='ascii.csv') 
-    return cat_pan_name
+    
+    catalog_raw.write("cat_pan.csv", format='ascii.csv') 
+    return "cat_pan.csv"
 
 def pan_query(query, RA, DEC):
     "Run panstarrs query via Casjobs"
@@ -229,8 +228,3 @@ def main(argv):
 if __name__=='__main__':
     import sys
     main(sys.argv)
-
-
-
-
-
