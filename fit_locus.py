@@ -3,9 +3,11 @@
 
 if __name__ != '__main__':
     print 'importing modules'
-    import os, re, string, pylab
+    import os, re, string
     import random, scipy, commands, anydbm
     import astropy.io.fits as pyfits
+    import numpy as np
+    import matplotlib as mpl
     from scipy import linalg
     from scipy import optimize
     from glob import glob
@@ -31,8 +33,6 @@ def fix_kpno():
 
     p.writeto('./EXAMPLES/kpno_fixed.fits')
         
-
-
 
 def join_cats(cs,outputfile):
     import astropy.io.fits as pyfits
@@ -61,7 +61,8 @@ def join_cats(cs,outputfile):
     print cols
     print len(cols)
     hdu = pyfits.PrimaryHDU()
-    hduSTDTAB = pyfits.new_table(cols) 
+    #hduSTDTAB = pyfits.new_table(cols) 
+    hduSTDTAB = pyfits.BinTableHDU.from_columns(cols) 
     hdulist = pyfits.HDUList([hdu])
     hdulist.append(hduSTDTAB)
     hdulist[1].header.update('EXTNAME','STDTAB')
@@ -70,18 +71,20 @@ def join_cats(cs,outputfile):
     print outputfile
     hdulist.writeto(outputfile)
 
-def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SDSS', sdssUnit=False): 
+def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, survey='SDSS', sdssUnit=False): 
 
     import scipy, math
     import astropy.io.fits as pyfits
 
-    RA, DEC, RADIUS = get_catalog_parameters(inputcat, racol, deccol) 
+    RA, DEC, RADIUS = get_catalog_parameters(inputcat, racol, deccol)
 
-    print 'WILL SEARCH FOR STARS WITHIN ' + str(RADIUS) + ' OF ' + str(RA) + ' ' + str(DEC)
+    print 'WILL SEARCH FOR STARS WITHIN ' + str(RADIUS) + 'min OF ' + str(RA) + ' ' + str(DEC)
 
     if survey == 'SDSS':
-        colors = ['u','g','r','i','z']   
-        color_AB = [['u',-0.04],['g',0],['r',0],['i',0],['z',0.02]]
+	#colors = ['u','g','r','i','z']
+	#color_AB = [['u',-0.04],['g',0],['r',0],['i',0],['z',0.02]]
+	colors = ['r']
+	color_AB = [['r',0]]
 
         ''' includes conversion to Pogson magnitudes from luptitudes '''
         keys = ['ra','dec']
@@ -124,13 +127,13 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
                     catalogStars[returned_keys[i]].append(float(res[i]))  
 
     elif survey == 'PanSTARRS':
-        colors = ['g','r','i','z','y']   
+        #colors = ['g','r','i','z','y']   
+        colors = ['r']   
 
-        ''' includes conversion to Pogson magnitudes from luptitudes '''
         keys = ['o.raMean as ra','o.decMean as dec']
-        keys += ['m.%(color)sFPSFMAG  as psfMagCorr_%(color)s' % {'color':color} for color in colors ] 
+        keys += ['m.%(color)sFPSFMag' % {'color':color} for color in colors ] 
         keys += ['m.%(color)sFKronMag' % {'color':color} for color in colors ]
-        keys += ['m.%(color)sFPSFMagErr as psfMagErr_%(color)s' % {'color':color} for color in colors ] 
+        keys += ['m.%(color)sFPSFMagErr' % {'color':color} for color in colors ] 
         wherekeys = ['n%(color)s > 0 ' % {'color':color} for color in colors ] 
         
         import sqlcl
@@ -139,9 +142,54 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
 	query += 'inner join ForcedMeanObject m on o.objid=m.objid' 
     	print query
 
-        ref_cat_name = sqlcl.pan_query(query, RA, DEC)
-#        ref_cat_name = "cat_pan.csv"
+	#ref_cat_name = sqlcl.pan_query(file, query, RA, DEC)
+	ref_cat_name = file + '.csv'
         with open(ref_cat_name) as ref_cat:
+            lines = ref_cat.readlines()
+        print len(lines) - 1, 'STAR(S) FOUND'
+        print lines[0]
+
+        returned_keys = re.split('\,',lines[0][:-1])
+        saveKeys = returned_keys[2:]
+
+        ''' make a array with empty list with an entry for each key '''
+        catalogStars = dict(zip(returned_keys,list([[] for x in returned_keys])))
+        print catalogStars.keys()
+
+        if lines[0] == 'N' or len(lines) -1  < 5:
+            print 'NO USABLE PanSTARRS DATA FOUND, PROCEEDING' 
+            matched = False
+            returnCat = inputcat
+        else:
+            matched = True
+            for line in lines[1:]:
+                line = line.replace('\n','')
+                res = re.split(',',line)
+                for i in range(len(res)): 
+                    catalogStars[returned_keys[i]].append(float(res[i]))
+
+    elif survey == 'Gaia':
+	
+	import sqlcl
+        ''' Gaia ADQL, Radius in degrees. Color excess cut:
+            https://gea.esac.esa.int/archive/documentation/GDR2/Data_processing/chap_cu5pho/sec_cu5pho_qa/ssec_cu5pho_excessflux.html '''
+
+	RAD = RADIUS / 60
+        query = "SELECT ra, dec, bp_rp, \
+			phot_g_mean_flux, phot_g_mean_flux_error,  \
+                        phot_bp_mean_flux, phot_bp_mean_flux_error, \
+                        phot_rp_mean_flux, phot_rp_mean_flux_error \
+                        FROM gaiadr2.gaia_source \
+                        WHERE 1=CONTAINS( POINT('ICRS',ra,dec), BOX('ICRS'," + str(RA) + "," + str(DEC) + "," + str(RAD) + ", " + str(RAD) + ")) \
+                        AND phot_g_mean_mag<=19 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
+                        AND phot_bp_rp_excess_factor > (1.0 + 0.015*bp_rp*bp_rp) AND phot_bp_rp_excess_factor < (1.3 + 0.06*bp_rp*bp_rp) "
+                        ## AND bp_rp >  0.6 AND bp_rp < 1.6 "
+        print query
+
+	EBV, gallong, gallat = galactic_extinction_and_coordinates(RA,DEC)
+	#sqlcl.gaia_query(file, query, EBV)	
+
+        with open(file + '.cut.csv') as ref_cat:
             lines = ref_cat.readlines()
         print len(lines) - 1, 'STAR(S) FOUND'
         print lines[0]
@@ -166,7 +214,8 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
                     catalogStars[returned_keys[i]].append(float(res[i]))
                
     elif survey == '2MASS':
-
+	if RADIUS > 59:
+		RADIUS = 59
         coordinate = str(RA) + '+' + str(DEC)
         catalog = '2MASS_stars.cat'
 
@@ -213,14 +262,6 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
             matched = True
 
     if matched:
-        #pylab.plot([14,26],[14,26], color='red')
-        #pylab.errorbar(sdss['psfMagCorr_u'], sdss['psfPogCorr_u'],yerr=sdss['psfPogErr_u'],fmt=None)
-        #pylab.errorbar(sdss['psfMagCorr_u'], sdss['psfPogCorr_u'],yerr=sdss['psfPogErr_u'],fmt=None)
-        #pylab.scatter(sdss['psfMagCorr_u'], sdss['psfPogCorr_u'])
-        #pylab.xlabel('asinh')
-        #pylab.ylabel('pogson')
-        #pylab.show()
-
         print 'making KDTrees'                                                                                                                                                                                                                                  
         if survey == 'SDSS' and sdssUnit:
             ''' make a catalog of all SDSS stars (i.e., not just those matched against catalog stars) '''                                                         
@@ -230,7 +271,8 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
                 cols.append(pyfits.Column(name=column_name,format='1E',array=scipy.array(catalogStars[column_name])))
 
             coldefs = pyfits.ColDefs(cols)
-            hdu_new = pyfits.new_table(coldefs)
+	    #hdu_new = pyfits.new_table(coldefs)
+            hdu_new = pyfits.BinTableHDU.from_columns(coldefs)
 
             returnCat = hdu_new
 
@@ -293,108 +335,6 @@ def get_survey_stars(inputcat, racol, deccol, necessary_columns, EBV, survey='SD
     print returnCat
  
     return returnCat, matched, necessary_columns
-
-def update_database(ebv,extinction_info,gallat,results,zps_dict_all,snpath,run,night='work_night',prefix=''):
-    import scamp
-    #results = {'full': {'g': -27.3226149087834, 'i': -26.995047295851624, 'J': 0.0, 'r': -27.46353800330477, 'u': -25.15744312611708, 'z': -26.100371463343443}, 'redchi': 0.69632291724906559, 'num': 62}
-    #zps_dict_all = {'g': -27.328568112837601, 'i': -26.997835729280972, 'J': 0.0, 'r': -27.466426877600014, 'u': -25.167893039784147, 'z': -26.09896835849986}     
-    
-    
-    import MySQLdb
-    db2 = MySQLdb.connect(db='calib')
-    c = db2.cursor()
-    
-    output = open('/Volumes/mosquitocoast/patrick/kpno/' + run +'/' + night + '/' + snpath + '/slrfit','w')
-
-    if prefix == 'SDSS':
-        name = 'reg'
-        for key in zps_dict_all.keys():                                                                                                                                                                           
-
-            short_key = key #.split('_')[-1]
-
-            command = "SELECT * from CALIB where SN='" + snpath + "' and FILT='" + short_key+ "' and NAME='" + name + "' and RUN='" + run + "'"
-            print command
-            c.execute(command)                                                                                                       
-            sqlresults = c.fetchall()
-            if not len(sqlresults):
-                command = "INSERT INTO CALIB (SN,FILT,NAME,RUN) VALUES ('" + snpath + "','" + short_key + "','" + name + "','" + run + "')"
-                print command 
-                c.execute(command) 
-
-            command = "UPDATE CALIB set " + "EBV=" + str(ebv) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)
-
-            command = "UPDATE CALIB set " + "DUSTCORR=" + str(extinction_info[key]) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)
-              
-            command = "UPDATE CALIB set " + "GALLAT=" + str(gallat) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)
-                                                                                                                                                                                                                  
-            command = "UPDATE CALIB set " + "SLRZP=" + str(zps_dict_all[key]) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)
-            print results 
-            command = "UPDATE CALIB set " + "SLRNUM=" + str(results['num']) + " WHERE SN='" + snpath + "' and FILT='" + key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)                                                                                                                       
-            command = "UPDATE CALIB set " + "SLRREDCHI=" + str(results['redchi']) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)
-            command = "UPDATE CALIB set " + "SLRZPERR=" + str(results['errors'][key]) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)                                                                                                                       
-            command = "UPDATE CALIB set " + "BOOTSTRAPNUM=" + str(results['bootstrapnum']) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)                                                                                                                       
-            command = "UPDATE CALIB set " + "BOOTSTRAPS='" + str(results['bootstraps'][key]) + "' WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-            c.execute(command)                                                                                                                       
-    else:
-
-        for key in zps_dict_all.keys():                                                                                                                                                                                      
-            short_key = key.split('_')[-1]
-            output.write(key + ' ' + str(zps_dict_all[key]) + '\n')
-                                                                                                                                                                                                                
-            if key != 'JCAT':
-                name = 'reg'                                                                                                                                                      
-                image = '/Volumes/mosquitocoast/patrick/kpno/' + run +'/' + night + '/' + snpath + '/' + short_key + '/reg.fits'
-                print image, snpath, key, name, run
-                reload(scamp).add_image(image,snpath,key,name,run)
-    
-    
-                command = "UPDATE CALIB set " + prefix + "SLRZP=" + str(zps_dict_all[key]) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-                c.execute(command)
-                command = "UPDATE CALIB set " + prefix + "SLRNUM=" + str(results['num']) + " WHERE SN='" + snpath + "' and FILT='" + key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-                c.execute(command)                                                                                                                       
-                command = "UPDATE CALIB set " + prefix + "SLRREDCHI=" + str(results['redchi']) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-                c.execute(command)
-                command = "UPDATE CALIB set " + prefix + "SLRZPERR=" + str(results['errors'][key]) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-                c.execute(command)                                                                                                                       
-                command = "UPDATE CALIB set " + prefix + "BOOTSTRAPNUM=" + str(results['bootstrapnum']) + " WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-                c.execute(command)                                                                                                                       
-                command = "UPDATE CALIB set " + prefix + "BOOTSTRAPS='" + str(results['bootstraps'][key]) + "' WHERE SN='" + snpath + "' and FILT='" + short_key + "' and NAME='" + name + "' and RUN='" + run + "'" 
-                c.execute(command)                                                                                                                       
-                                                                                                                                                                                                            
-                                                                                                                                                                                                            
-                                                                                                                                                                                                            
-    output.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ''' retrieve SFD dust extinction and galactic coordinates from NED '''
@@ -467,11 +407,12 @@ def get_catalog_parameters(fulltable, racol, deccol):
     ''' calculate field center '''
 
     import scipy
-
-    DEC = scipy.median(fulltable.data.field(deccol))
+    #DEC = scipy.median(fulltable.data.field(deccol))
+    DEC = (fulltable.data.field(deccol).min() + fulltable.data.field(deccol).max())/2.
     DEC_DIFF_SQ = ((fulltable.data.field(deccol) - DEC) * 60.)**2.
 
-    RA = scipy.median(fulltable.data.field(racol))
+    #RA = scipy.median(fulltable.data.field(racol))
+    RA = (fulltable.data.field(racol).min() + fulltable.data.field(racol).max())/2.
     RA_DIFF_SQ = ((fulltable.data.field(racol) - RA) * 60. * scipy.cos(DEC))**2.
 
     RADII = (DEC_DIFF_SQ + RA_DIFF_SQ)**0.5
@@ -479,7 +420,7 @@ def get_catalog_parameters(fulltable, racol, deccol):
     return RA, DEC, RADII.max() 
 
 
-def run(file,columns_description,output_directory=None,plots_directory=None,extension='OBJECTS',racol=None,deccol=None,end_of_locus_reject=1,plot_iteration_increment=50, min_err=0.02, bootstrap_num=0, snpath=None, night=None, run=None, prefix='',data_from_sdss=False, live_plot=False, addSDSS=False, addPanSTARRS=False, number_of_plots=10, add2MASS=False, sdssUnit=False):
+def run(file,columns_description,output_directory=None,plots_directory=None,extension='OBJECTS',racol=None,deccol=None,end_of_locus_reject=1,plot_iteration_increment=50, min_err=0.02, bootstrap_num=0, snpath=None, night=None, run=None, prefix='',data_from_sdss=False, addSDSS=False, addPanSTARRS=False, addGaia=False, number_of_plots=10, add2MASS=False, sdssUnit=False):
 
     try: 
         extension = int(extension)
@@ -496,7 +437,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     RA, DEC, RADIUS = get_catalog_parameters(fulltable, racol, deccol) 
 
     if RA is not None and DEC is not None:
-        EBV, gallong, gallat = galactic_extinction_and_coordinates(RA,DEC)
+	    EBV, gallong, gallat = galactic_extinction_and_coordinates(RA,DEC)
 
     #add in projection
     #inputcat.data.field(racol) - RA)**2. + (inputcat.data.field(deccol) - DEC)**2.)**0.5
@@ -504,16 +445,20 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     fitSDSS = False
     foundSDSS = 0 
     if addSDSS:
-        fulltable, foundSDSS, necessary_columns = get_survey_stars(fulltable, racol, deccol, necessary_columns, EBV, survey='SDSS', sdssUnit=sdssUnit)
+        fulltable, foundSDSS, necessary_columns = get_survey_stars(file, fulltable, racol, deccol, necessary_columns, EBV, survey='SDSS', sdssUnit=sdssUnit)
         if foundSDSS: fitSDSS = True
             
     foundPanSTARRS = 0 
     if addPanSTARRS:
-        fulltable, foundPanSTARRS, necessary_columns = get_survey_stars(fulltable, racol, deccol, necessary_columns, EBV, survey='PanSTARRS')
+        fulltable, foundPanSTARRS, necessary_columns = get_survey_stars(file, fulltable, racol, deccol, necessary_columns, EBV, survey='PanSTARRS')
+
+    foundGaia = 0
+    if addGaia:
+        fulltable, foundGaia, necessary_columns = get_survey_stars(file, fulltable, racol, deccol, necessary_columns, EBV, survey='Gaia')
             
     found2MASS = 0 
     if add2MASS:
-        fulltable, found2MASS, necessary_columns = get_survey_stars(fulltable, racol, deccol, necessary_columns, EBV, survey='2MASS')
+        fulltable, found2MASS, necessary_columns = get_survey_stars(file, fulltable, racol, deccol, necessary_columns, EBV, survey='2MASS')
         if found2MASS: fit2MASS = True
 
     if output_directory is None:
@@ -538,7 +483,8 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
             ''' include only SDSS magnitudes in unit test '''
             input_info = [] 
 
-        sdss_info = [{'mag':'psfPogCorr_' + c, 'plotName':'SDSS ' + c, 'filter': 'SDSS-' + c + '.res', 'mag_err': 'psfPogErr_' + c, 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['g','r','i','z'] ]
+	#sdss_info = [{'mag':'psfPogCorr_' + c, 'plotName':'SDSS ' + c, 'filter': 'SDSS-' + c + '.res', 'mag_err': 'psfPogErr_' + c, 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['g','r','i','z'] ]
+	sdss_info = [{'mag':'psfPogCorr_' + c, 'plotName':'SDSS ' + c, 'filter': 'SDSS-' + c + '.res', 'mag_err': 'psfPogErr_' + c, 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r'] ]
 
         for filt_dict in sdss_info:
             ''' avoid duplicate filters -- will override '''
@@ -555,9 +501,27 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
         for i in range(len(input_info)):
             input_info[i]['HOLD_VARY'] = 'VARY'
 
-        panstarrs_info = [{'mag':'psfPogCorr_' + c, 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': 'psfPogErr_' + c, 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r','i','z','y'] ]
+        #panstarrs_info = [{'mag':c + 'FPSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'FPSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r','i','z','y'] ]
+        panstarrs_info = [{'mag':c + 'FPSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'FPSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r'] ]
+	#panstarrs_info += [{'mag':c + 'FPSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'FPSFMagErr', 'HOLD_VARY':'VARY', 'ZP':0.} for c in ['z'] ]
 
         for filt_dict in panstarrs_info:
+            ''' avoid duplicate filters -- will override '''
+            if filt_dict['mag'] not in [f['mag'] for f in input_info]:
+                input_info += [filt_dict]
+
+    if addGaia and foundGaia:
+	for i in range(len(input_info)):
+	   input_info[i]['HOLD_VARY'] = 'VARY'
+
+	#gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr2_revised.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
+	#gaia_info = [ {'mag':'ab_bp', 'plotName':'Gaia Gbp' , 'filter': 'Gaia_dr2_revised.bp.res', 'mag_err': 'phot_bp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
+	#gaia_info = {'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr2_revised.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
+	gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr2_revised.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
+			{'mag':'ab_bp', 'plotName':'Gaia Gbp' , 'filter': 'Gaia_dr2_revised.bp.res', 'mag_err': 'phot_bp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
+			{'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr2_revised.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.} ]
+
+        for filt_dict in gaia_info:
             ''' avoid duplicate filters -- will override '''
             if filt_dict['mag'] not in [f['mag'] for f in input_info]:
                 input_info += [filt_dict]
@@ -580,8 +544,8 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     ''' check to see if at least one but not all filter is held constant '''
     if not filter(lambda x: x['HOLD_VARY'] == 'HOLD', input_info): 
         raise Exception('None of your magnitudes is held fixed (i.e., HOLD_VARY HOLD)')
-    if not filter(lambda x: x['HOLD_VARY'] == 'VARY', input_info): 
-        raise Exception('All of your magnitudes are held fixed (i.e., HOLD_VARY VARY)')
+#if not filter(lambda x: x['HOLD_VARY'] == 'VARY', input_info): 
+	#raise Exception('All of your magnitudes are held fixed (i.e., HOLD_VARY VARY)')
 
     filters = utilities.get_filters([[a['mag'], a['filter']] for a in input_info])
 
@@ -600,7 +564,6 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     ''' recombine '''
     input_info = info_hold + info_vary
 
-    extinction_info = {}
 
     if RA is not None and DEC is not None:
         #EBV, gallong, gallat = galactic_extinction_and_coordinates(RA,DEC)
@@ -612,7 +575,6 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
             input_info[i]['extinction'] = extinction
             input_info[i]['gallong'] = gallong 
             input_info[i]['gallat'] = gallat 
-            extinction_info[input_info[i]['mag']] = extinction
             print input_info[i]['mag'], extinction, ' (mag) in field', coeff
 
     print 'INPUT FILTERS:', [a['filter'] for a in input_info]
@@ -621,45 +583,6 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     mag_locus = utilities.synthesize_expected_locus_for_observations(input_info)
 
     print mag_locus
-
-    if False:
-        import pickle , pylab                                                                                                                                          
-        pylab.scatter(fulltable.data.field('psfPogCorr_z') - fulltable.data.field('j_m'), fulltable.data.field('psfPogCorr_i') - fulltable.data.field('psfPogCorr_z'))
-        f = open('lociCAS','r')
-        m = pickle.Unpickler(f)
-        locus_list_mag = m.load()
-        print locus_list_mag.keys()
-        pylab.scatter(locus_list_mag['ZSDSS_JTMASS'][:],locus_list_mag['ISDSS_ZSDSS'][:],color='green')
-        pylab.show()
-
-    if False:
-        import pickle, os                                            
-        f = open(os.environ['bonn'] + '/maglocus_SYNTH','r')
-        m = pickle.Unpickler(f)
-        locus_mags = m.load()
-                                                                     
-        translate = {'MAG_APER1-SUBARU-10_2-1-W-S-I+' : 'WSISUBARU',
-        'MAG_APER1-SUBARU-10_2-1-W-S-Z+' : 'WSZSUBARU',
-        'MAG_APER1-MEGAPRIME-0-1-r' : 'MPRSUBARU',
-        'MAG_APER1-SUBARU-10_2-1-W-C-RC' : 'RJOHN',
-        'MAG_APER1-SUBARU-10_2-1-W-J-B': 'BJOHN', 
-        'MAG_APER1-SUBARU-9-4-W-C-RC' : 'RJOHN', 
-        'MAG_APER1-SUBARU-9-4-W-C-IC' : 'IJOHN',
-        'MAG_APER1-SUBARU-10_2-1-W-J-V' : 'VJOHN',
-        'MAG_APER1-MEGAPRIME-0-1-g' : 'MPGSUBARU',
-        'USDSS': 'USDSS',
-        'GSDSS': 'GSDSS',
-        'RSDSS': 'RSDSS',
-        'ISDSS': 'ISDSS',
-        'ZSDSS': 'ZSDSS',
-        }
-                                                                     
-        mag_locus = []
-        for c in locus_mags:
-            d = {} 
-            for key in translate.keys():
-                d[key] =  c[translate[key]]
-            mag_locus.append(d)
 
 
     offset_list = output_directory + '/' + file.split('/')[-1]  + '.offsets.list'
@@ -683,7 +606,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
         cols.append(pyfits.Column(name='SeqNr',format='J',array=scipy.arange(len(fulltable.data))))
         hdu = pyfits.PrimaryHDU()
         hdulist = pyfits.HDUList([hdu])
-        fulltable = pyfits.new_table(cols)
+        fulltable = pyfits.BinTableHDU.from_columns(cols)
 
     table = fulltable.data 
 
@@ -721,49 +644,19 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     os.system('rm ' + plots_directory + '/qc_*png')                                                    
 
     ''' first calibrate redder filters '''
-    results, ref_mags, SeqNr = fit(table, red_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, live_plot=live_plot, number_of_plots=number_of_plots)
+    results, ref_mags, SeqNr = fit(table, red_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, number_of_plots=number_of_plots)
 
     zps_dict_all, zps_dict_all_err, cal_type = update_zps(zps_dict_all,zps_dict_all_err,cal_type,results,'REDDER')
 
     print len(ref_mags), len(SeqNr)
 
+    ''' calibrate using bright u-band stars: removed'''
 
-
-
-
-    ''' now calibrate using only bright u'-band stars '''
     if len(blue_input_info):
-        #pylab.scatter(ref_mags[:,1], ref_mags[:,1] - ref_mags[:,2])
-        #pylab.show()
-
-
-        ''' select main sequence '''
-        #gmr = ref_mags[:,1] - ref_mags[:,2]
-        #mask = (gmr > 0.2) * (gmr < 0.6) 
-
-        if False:
-            mask = gmr < 0.5                        
-            SeqNr = SeqNr[mask]
-            ref_mags = ref_mags[mask]
-                                                    
-            #g = ref_mags[:,1]
-            #mask = g < 17.5
-            #SeqNr = SeqNr[mask]
-            #print mask
-            #ref_mags = ref_mags[mask]
-                                                    
-            not_ms = [] 
-            for ele in scipy.arange(len(table)):
-                found = False 
-                for ele_seq in SeqNr: 
-                    if ele_seq == ele: found = True
-                if found == False:
-                    not_ms.append(ele)
-            not_ms = scipy.array(not_ms)
 
         gmr = ref_mags[:,1] - ref_mags[:,2]
         print gmr
-        #table = table[SeqNr]
+        table = table[SeqNr]
         #table.field(blue_input_info[0]['mag'])[gmr > 0.5] = 99.
 
         print table.field(blue_input_info[0]['mag'])
@@ -787,7 +680,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
 
         print red_input_info
 
-        results, ref_mags, SeqNr = fit(table, red_input_info + blue_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, live_plot=live_plot, number_of_plots=number_of_plots)
+        results, ref_mags, SeqNr = fit(table, red_input_info + blue_input_info, mag_locus, min_err=min_err, end_of_locus_reject=end_of_locus_reject, plot_iteration_increment=plot_iteration_increment, bootstrap=True, bootstrap_num=bootstrap_num, plotdir=plots_directory, pre_zps=None, number_of_plots=number_of_plots)
 
         print results
 
@@ -796,13 +689,17 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
         print results
         print zps_dict_all
 
- 
+
     output_string = '' 
 
     if foundSDSS: 
         output_string += '#  USED ' + str(foundSDSS) + ' MATCHED SDSS STARS \n'
     if found2MASS:
         output_string += '#  USED ' + str(found2MASS) + ' MATCHED 2MASS STARS \n'
+    if foundPanSTARRS:
+        output_string += '#  USED ' + str(foundPanSTARRS) + ' MATCHED 2MASS STARS \n'
+    if foundGaia:
+        output_string += '#  USED ' + str(foundGaia) + ' MATCHED 2MASS STARS \n'
 
     output_string += '# ' + str(gallat) + ' ' + str(gallong) + ' galactic latitude longitude \n'
     output_string += '# ' + str(results['redchi']) + ' reduced chi squared value \n'
@@ -829,8 +726,6 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     print 'LIST OF ZEROPOINTS WRITTEN TO', offset_list
 
     print snpath        
-    if snpath is not None:
-        update_database(EBV,extinction_info,gallat,results,zps_dict_all,snpath,run,prefix=prefix)
 
 
 def fit(table, input_info_unsorted, mag_locus,  
@@ -844,7 +739,6 @@ def fit(table, input_info_unsorted, mag_locus,
         bootstrap_num=0, 
         plotdir='.', 
         save_bootstrap_plots=False, 
-        live_plot=False,
         pre_zps=None,
         number_of_plots = 10,
         fast=True,
@@ -852,27 +746,24 @@ def fit(table, input_info_unsorted, mag_locus,
         ):
 
     os.system('mkdir -p ' + plotdir)
+    import numpy as np
 
 
-    params_pylab = {'backend' : 'ps',
+    params = {'backend' : 'ps',
          'text.usetex' : False,
           'ps.usedistiller' : 'xpdf',
           'ps.distiller.res' : 6000}
-    pylab.rcParams.update(params_pylab)
+    mpl.rcParams.update(params)
+
     fig_size = [5,5]
-    params_pylab = {'axes.labelsize' : 14,
-              'text.fontsize' : 14,
-              'legend.fontsize' : 12,
-              'xtick.labelsize' : 10,
-              'ytick.labelsize' : 10,
-              #'scatter.s' : 0.1,
-              #'scatter.marker': 'o',
-              'figure.figsize' : fig_size}
-    pylab.rcParams.update(params_pylab)
-
-
-    if live_plot: 
-        pylab.ion()
+    params = {'axes.labelsize' : 14,
+              'font.size' : 14,
+	      'legend.fontsize' : 12,
+	      'xtick.labelsize' : 10,
+	      'ytick.labelsize' : 10,
+              'scatter.marker': 'o',
+	      'figure.figsize' : fig_size}
+    mpl.rcParams.update(params)
 
     vary_input_info = filter(lambda x: x['HOLD_VARY'] == 'VARY', input_info_unsorted)
     hold_input_info = filter(lambda x: x['HOLD_VARY'] == 'HOLD', input_info_unsorted)
@@ -939,7 +830,7 @@ def fit(table, input_info_unsorted, mag_locus,
         ''' make matrix with a full set of locus points for each star '''    
         locus_matrix = scipy.array(number_all_stars*[locus_list])
         ref_locus_matrix = scipy.array(number_all_stars*[ref_locus_list])
-        #print locus_matrix.shape
+	#print locus_matrix.shape
 
         ''' assemble matricies to make instrumental measured bands '''
         SeqNr = table.field('SeqNr')
@@ -955,7 +846,7 @@ def fit(table, input_info_unsorted, mag_locus,
         #print A_err.shape
         ''' only use stars with errors less than max_err '''            
 
-        print A_band
+        print A_band.shape
         if True:
             mask = A_err > max_err  
             mask[A_err > 1.5] = 1  
@@ -969,24 +860,25 @@ def fit(table, input_info_unsorted, mag_locus,
         good = good[:,0,:]
         good_bands_per_star = good.sum(axis=1) # sum all of the good bands for any given star
         
-        #print good_bands_per_star 
 
         ''' figure out the cut-off '''
-        SeqNr = SeqNr[good_bands_per_star>=min_bands_per_star]
-        A_band = A_band[good_bands_per_star>=min_bands_per_star]
-        A_err = A_err[good_bands_per_star>=min_bands_per_star]
+	index = np.where(good_bands_per_star>=min_bands_per_star)
+        SeqNr = SeqNr[index]
+        A_band = A_band[index]
+        A_err = A_err[index]
+        locus_matrix = locus_matrix[index]
+        ref_locus_matrix = ref_locus_matrix[index]
+
         A_err[A_err<min_err] = min_err 
-        locus_matrix = locus_matrix[good_bands_per_star>=min_bands_per_star]
-        ref_locus_matrix = ref_locus_matrix[good_bands_per_star>=min_bands_per_star]
 
         ''' if a bootstrap iteration, bootstrap with replacement '''
         if string.find(iteration,'bootstrap') != -1:
             length = len(A_band)
             random_indices = []
-            unique_indices = {}
+	    #unique_indices = {}
             for e in range(length): 
                 index = int(random.random()*length - 1)
-                unique_indices[index] = 'yes'
+		#unique_indices[index] = 'yes'
                 random_indices.append(index)
 
             #print random_indices, len(unique_indices.keys())
@@ -1049,12 +941,9 @@ def fit(table, input_info_unsorted, mag_locus,
                 resid_sum = resid_prelim.sum(axis=2) #/ good.sum(axis=2) 
 
                 ''' these two are not necessarily the same star '''
-                match_locus_index = resid.argmin(axis=1)
+                match_locus_index = resid.argmin(axis=1) ## closest locus to each star
                 select_diff = resid[scipy.arange(len(match_locus_index)),match_locus_index]
                 select_sum = resid_sum[scipy.arange(len(match_locus_index)),match_locus_index]
-
-                #select_sum[match_locus_index > 30] = select_sum[match_locus_index > 30] / 20.
-
 
                 select_good = good[scipy.arange(len(match_locus_index)),match_locus_index]
 
@@ -1068,36 +957,31 @@ def fit(table, input_info_unsorted, mag_locus,
                 print 'data points', data_points
                 print 'stars', len(select_good)
                 degrees_of_freedom = data_points - (bands.shape[-1] - 1) - 2*len(select_good) - 1
+                # degrees of freedom = datapoints - parameters - 1
 
                 ''' two fit parameters for each star: median and choice of closest locus point (I think) '''
+                #redchi = stat_tot / float(max(1,len(bands) - 1))
                 redchi = chi_squared_total / float(degrees_of_freedom)
 
-                ''' compute SDSS apparent magnitudes of stars ''' 
+                ''' compute reference apparent magnitudes of stars ''' 
                 norm = scipy.swapaxes(scipy.array([spectrum_normalization.tolist()]*5),0,1)
                 ref_locus_mags = ref_locus_matrix[scipy.arange(len(match_locus_index)),match_locus_index,:]
                 ref_mags =  norm + ref_locus_mags 
 
                 stat_tot = chi_squared_total #select_diff.sum()
 
-                #print [a['mag'] for a in input_info], zps_hold.values(), ['%.6f' % a for a in pars.tolist()] 
                 print 'ZPs', dict(zip([a['mag'] for a in input_info] ,([zps_hold[a['mag']] for a in hold_input_info] + ['%.6f' % a for a in list(pars)])))
-                
-                #for a in [b['mag'] for b in input_info]:
-                #    if scipy.is_nan(a): 
-                #        print  
-                #        raise Exception 
                 
 
                 print 'CURRENT TASK:', iteration
                 print 'STARS:', len(bands)
-                #redchi = stat_tot / float(max(1,len(bands) - 1))
-                # degrees of freedom = datapoints - parameters - 1
                 print 'chi^2', '%.5f' % stat_tot, 
                 print 'degrees of freedom', '%d' % degrees_of_freedom, 
                 print 'red chi^2', '%.5f' % redchi
                 print 'iteration', itr
-                if live_plot and iteration is 'full' and (itr % plot_iteration_increment == 0 or savefig is not None):
-                    plot_progress(pars,stat_tot,savefig)
+
+                #if iteration is 'full' and (itr % plot_iteration_increment == 0 or savefig is not None):
+                #    plot_progress(pars,stat_tot,savefig)
                 itr += 1
 
                 if residuals:
@@ -1128,22 +1012,29 @@ def fit(table, input_info_unsorted, mag_locus,
                 oa = copy(input_info)
                 oa.sort(sort_wavelength)
 
-                oa_no_ref = filter(lambda x: string.find(x['mag'],'psfMag') == -1, oa)
+		oa_no_ref = filter(lambda x: string.find(x['mag'],'psfMag') == -1 and string.find(x['mag'], 'phot_g_mean_mag') == -1 and string.find(x['mag'], 'FPSFMag') == -1, oa)
 
 
                 def plot_combinations(input):
-                    list = []
-                    #print input_info
-                    rng = range(len(input))
-                    for a in rng:
-                        for b in rng:
-                            if a < b:
-                                for c in rng:
-                                    if b <= c:
-                                        for d in rng: 
-                                            if c < d:
-                                                list.append([[input[c],input[d]],[input[a],input[b]]])
-                    return list
+			list = []
+			index = []
+			N = len(input)
+			for a in range(N):
+				for b in range(a+1,N):
+					for c in range(N):
+						for d in range(c+1,N): 
+							if (len(index)==0) and ( [a,b] != [c,d] ):
+								index.append( [[a,b], [c,d]] )
+							else:
+								flag = True
+								flag *= not ([a,b] == [c,d])
+								for [a0,b0], [c0,d0] in index:
+									flag *= not ([a0,b0,c0,d0] == [c,d,a,b])
+								if flag:
+									index.append( [[a,b], [c,d]] )
+			for [a,b], [c,d] in index:
+				list.append([[input[c],input[d]],[input[a],input[b]]])
+			return list
 
 
                 if savefig is not None:
@@ -1159,7 +1050,8 @@ def fit(table, input_info_unsorted, mag_locus,
                         if input_info[j]['mag'] == filt:
                             return j
 
-                for [c1_1, c1_2], [c2_1,c2_2] in index_list[:number_of_plots]: 
+		#for [c1_1, c1_2], [c2_1,c2_2] in index_list[:number_of_plots]: 
+                for [c1_1, c1_2], [c2_1,c2_2] in index_list: 
 
                     c1_band1 = c1_1['mag']
                     c1_band2 = c1_2['mag']
@@ -1207,28 +1099,8 @@ def fit(table, input_info_unsorted, mag_locus,
 
                         #print len(x_color), len(x_color) 
 
-    
-
-
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        pylab.clf()                                                                            
-                        pylab.axes([0.15,0.125,0.95-0.15,0.95-0.125])
+			mpl.pyplot.clf()                                                                            
+                        mpl.pyplot.axes([0.15,0.125,0.95-0.15,0.95-0.125])
 
                         x_a = c1_1['plotName'] 
                         x_b = c1_2['plotName'] 
@@ -1247,33 +1119,30 @@ def fit(table, input_info_unsorted, mag_locus,
                         units = " ${\\rm (mag)}$"
                         x_color_name = x_a + '  -  ' + x_b + units
                         y_color_name = y_a + '  -  ' + y_b + units 
-                        pylab.xlabel(x_color_name)
-                        pylab.ylabel(y_color_name)
+                        mpl.pyplot.xlabel(x_color_name)
+                        mpl.pyplot.ylabel(y_color_name)
 
                         if len(x_color):
-                            pylab.scatter(x_color,y_color,color='#0066ff',s=4,marker='o', zorder=20)
-                            pylab.errorbar(x_color,y_color,xerr=x_err,yerr=y_err,marker=None,fmt=None,ecolor="#e8e8e8",ms=1, mew=1, zorder=1) #,mc='none')   
+                            mpl.pyplot.scatter(x_color,y_color,color='#0066ff',s=4,marker='o', zorder=20)
+                            mpl.pyplot.errorbar(x_color,y_color,xerr=x_err,yerr=y_err,marker=None,fmt='o',ecolor="#e8e8e8",ms=1, mew=1, zorder=1) #,mc='none')   
 
                             c1_locus = locus_matrix[0,:,ind(c1_band1)] - locus_matrix[0,:,ind(c1_band2)]
                             c2_locus = locus_matrix[0,:,ind(c2_band1)] - locus_matrix[0,:,ind(c2_band2)]
-                            pylab.plot(c1_locus,c2_locus,'r-',linewidth=1,zorder=30)
-                            pylab.scatter(c1_locus,c2_locus,color='red',s=7,marker='o',zorder=30)
+                            mpl.pyplot.plot(c1_locus,c2_locus,'r-',linewidth=1,zorder=30)
+                            mpl.pyplot.scatter(c1_locus,c2_locus,color='red',s=7,marker='o',zorder=30)
 
                             if pre_zps:
-                                pylab.errorbar(pre_x_color,pre_y_color,xerr=x_err,yerr=y_err,fmt=None,c='green')
-                                pylab.scatter(pre_x_color,pre_y_color,c='green')
+                                mpl.pyplot.errorbar(pre_x_color,pre_y_color,xerr=x_err,yerr=y_err,fmt='o',c='green')
+                                mpl.pyplot.scatter(pre_x_color,pre_y_color,c='green')
 
                             x_diff = (c1_locus[-1] - c1_locus[0])
                             y_diff = (c2_locus[-1] - c2_locus[0])
-                            pylab.arrow(c1_locus[0]+x_diff*0.1,c2_locus[-1]-y_diff*0.1,x_extinct,y_extinct,width=0.01,color='black')
+                            mpl.pyplot.arrow(c1_locus[0]+x_diff*0.1,c2_locus[-1]-y_diff*0.1,x_extinct,y_extinct,width=0.01,color='black')
 
                             if not publish:
-                                pylab.text(c1_locus[0]+x_diff*0.1 + x_extinct,c2_locus[-1]-y_diff*0.1 + y_extinct,'  ext. vec.',color='black')
+                                mpl.pyplot.text(c1_locus[0]+x_diff*0.1 + x_extinct,c2_locus[-1]-y_diff*0.1 + y_extinct,'  ext. vec.',color='black')
                             if stat_tot is not None and not publish:
-                                pylab.title('N=' + str(len(x_color)) + ' chi$^{2}$=' + ('%.1f' % stat_tot) + ' ' + iteration + ' ' + outliers + ' GALLAT=' + str(gallat))
-
-                            if live_plot:
-                                pylab.draw()
+                                mpl.pyplot.title('N=' + str(len(x_color)) + ' chi$^{2}$=' + ('%.1f' % stat_tot) + ' ' + iteration + ' ' + outliers + ' GALLAT=' + str(gallat))
 
                             fit_band_zps = reduce(lambda x,y: x + y, [z[-2:].replace('C','').replace('-','') for z in [a['mag'] for a in input_info]])
                             print 'savefig', savefig
@@ -1286,20 +1155,24 @@ def fit(table, input_info_unsorted, mag_locus,
                                     print file
 
                                    
-                                    print pylab.rcParams['figure.figsize']
-                                    pylab.savefig(file)
+                                    print mpl.rcParams['figure.figsize']
+                                    mpl.pyplot.savefig(file)
 
 
                 def order_plots(a,b):
                     if string.find(a,'psfMag') != -1 and string.find(b,'psfMag') == -1:
-                        return 1 
-                    else: return -1 
+			    return 1 
+		    elif string.find(a,'FPSFMag') != -1 and string.find(b,'FPSFMag') == -1:
+			    return 1
+		    elif string.find(a,'phot_g_mean_mag') != -1 and string.find(b,'phot_g_mean_mag') == -1:
+			    return 1
+		    else: return -1 
 
                 if savefig is not None:
                                                             
                     fs = glob(plotdir + '/qc_*png')                                                                 
                     print fs
-                    ''' put non-SDSS plots first '''
+                    ''' put non-reference plots first '''
                     fs.sort(order_plots)
                     print fs
                     html = open(plotdir + '/all.html','w')
@@ -1321,14 +1194,16 @@ def fit(table, input_info_unsorted, mag_locus,
                 if True:
                     pinit = []                                                                                                               
                     for i in range(len(hold_input_info),len(input_info)):
-                        key = input_info[i]['mag']
+                        key = input_info[i]['mag'] ## varying magnitudes
                         info_hold = filter(lambda x: x['HOLD_VARY'] == 'HOLD', input_info) #[0]['mag']
                         ''' calculate average color for actual and model locus '''
                         diff = A_band[:,0,i] - A_band[:,0,0]
                         print A_band.shape, good.shape
                         good_diff = good[:,0,i] + good[:,0,0]
                         print scipy.sum(good[:,0,i]), 'number of good measurements in band'
-                        diff = diff[good_diff == 2]
+                        #diff = diff[good_diff == 2]
+			ind = np.where(good_diff == 2)
+                        diff = diff[ind[0]]
 
                         print key, len(diff)
                   
@@ -1339,7 +1214,6 @@ def fit(table, input_info_unsorted, mag_locus,
                         locus_here = [mag_locus[x][input_info[i]['mag']] - mag_locus[x][info_hold[0]['mag']] for x in range(len(mag_locus))]
                         median_locus = scipy.median(locus_here)
                         pinit.append(median_locus - median_instrumental)
-                                                    #print pinit 
 
 
                 #$pinit = [0 for key in [a['mag'] for a in vary_input_info]]
@@ -1390,7 +1264,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
             else: 
 
-                resid_thresh = 6 
+		resid_thresh = 6
                 bands = bands[residuals < resid_thresh]
                 bands_err = bands_err[residuals < resid_thresh]
                 locus_matrix = locus_matrix[residuals < resid_thresh]
@@ -1402,15 +1276,16 @@ def fit(table, input_info_unsorted, mag_locus,
                 ref_mags = ref_mags[residuals < resid_thresh]
 
                 ''' first filter on distance '''
-                bands = bands[dist < 3]
-                bands_err = bands_err[dist < 3]
-                locus_matrix = locus_matrix[dist < 3]
-                ref_locus_matrix = ref_locus_matrix[dist < 3]
-                SeqNr = SeqNr[dist < 3]
-                good = good[dist < 3]
-                residuals = residuals[dist < 3]
-                end_of_locus = end_of_locus[dist < 3]
-                ref_mags = ref_mags[dist < 3]
+		ind = np.where(dist<3)
+                bands = bands[ind]
+                bands_err = bands_err[ind]
+                locus_matrix = locus_matrix[ind]
+                ref_locus_matrix = ref_locus_matrix[ind]
+                SeqNr = SeqNr[ind]
+                good = good[ind]
+                residuals = residuals[ind]
+                end_of_locus = end_of_locus[ind]
+                ref_mags = ref_mags[ind]
 
                 if True:
                     ''' filter on end of locus '''                      
@@ -1419,7 +1294,6 @@ def fit(table, input_info_unsorted, mag_locus,
                     locus_matrix = locus_matrix[end_of_locus]
                     ref_locus_matrix = ref_locus_matrix[end_of_locus]
                     SeqNr = SeqNr[end_of_locus]
-                    #print end_of_locus[:,0]
                     good = good[end_of_locus]
                     ref_mags = ref_mags[end_of_locus]
 
@@ -1443,12 +1317,6 @@ def fit(table, input_info_unsorted, mag_locus,
                 pinit = out 
                 outliers = 'outliers removed'
     
-                if False:                                                                 
-                    pinit = scipy.array(out) + scipy.array([random.random()*1.0 for p in pinit])
-                    pinit = out 
-                    out = scipy.optimize.fmin(errfunc,pinit,maxiter=10000,args=()) 
-                    residuals,dist,redchi,end_of_locus, num, ref_mags  = errfunc(out,savefig=iteration+'_'+outliers+'.png',residuals=True)
-                    print out
             else:
                 print 'NO OUTLYING STARS OR STARS MATCHING BLUE END OF LOCUS, PROCEEDING'
                 keep_fitting = False
@@ -1497,20 +1365,6 @@ def fit(table, input_info_unsorted, mag_locus,
     results['errors'] = errors
     results['bootstrapnum'] = bootstrap_num 
 
-    if False:
-        def save_results(save_file,results,errors):                                               
-            f = open(save_file,'w')
-            for key in results['full'].keys():
-                f.write(key + ' ' + str(results['full'][key]) + ' +- ' + str(errors[key]) + '\n')
-            f.close()
-                                                                                                  
-            f = open(save_file + '.pickle','w')
-            m = pickle.Pickler(f)
-            pickle.dump({'results':results,'errors':errors},m)
-            f.close()
-
-        if results.has_key('full') and save_results is not None: save_results(save_file,results, errors)
-                                                              
     return results, results['ref_mags_full'], results['SeqNr_full']
 
 if __name__ == '__main__':
@@ -1531,13 +1385,13 @@ if __name__ == '__main__':
     parser.add_option("-p","--plots",help="destination directory for plots, if different from /output directory/PLOTS",default=None)
     parser.add_option("-r","--racol",help="name of column in FITS file with object RA in DEGREES (default: X_WORLD)",default='X_WORLD')
     parser.add_option("-d","--deccol",help="name of column in FITS file with object DEC in DEGREES (default: XWORLD)",default='Y_WORLD')
-    parser.add_option("-l","--liveplot",help="show real-time plot of fit (default: True)",action='store_true')
     parser.add_option("-z","--SN",help="snpath",default=None)
     parser.add_option("-t","--run",help="run",default=None)
     parser.add_option("-n","--night",help="night",default=None)
     parser.add_option("-s","--addSDSSgriz",action='store_true',help="automatically search for and add SDSS griz stellar photometry, if available")
     parser.add_option("-j","--add2MASSJ",action='store_true',help="automatically search for and add 2MASS J stellar photometry, if available")
     parser.add_option("-a","--addPanSTARRS",action='store_true',help="automatically search for and add PanSTARRS griz stellar photometry, if available")
+    parser.add_option("-g","--addGaia",action='store_true',help="automatically search for and add Gaia dr2 G band stellar photometry")
     parser.add_option("-w","--numberofplots",help="number of plots to make (default: 10)",default=10)
     parser.add_option("-u","--sdssUnit",help="run SDSS unit test (only works if in coverage)",action='store_true')
     
@@ -1563,9 +1417,13 @@ if __name__ == '__main__':
         parser.error('you must specify the extension of the input FITS catalog containing the stellar magnitudes')
 
     print 'importing libraries'
-    import os, re, string, pylab
+    import os, re, string
     import random, scipy, commands, anydbm
     import astropy.io.fits as pyfits
+    import matplotlib as mpl
+    import numpy as np
+    from astroquery.gaia import Gaia
+    from astropy.table import Table
     from scipy import linalg
     from scipy import optimize
     from glob import glob
@@ -1573,6 +1431,4 @@ if __name__ == '__main__':
     import utilities
     print 'finished importing libraries'
 
-    print options.liveplot
-    
-    run(options.file,options.columns,output_directory=options.output,plots_directory=options.plots,extension=options.extension,racol=options.racol,deccol=options.deccol,bootstrap_num=options.bootstrap,live_plot=options.liveplot, add2MASS=options.add2MASSJ, addSDSS=options.addSDSSgriz, addPanSTARRS=options.addPanSTARRS, number_of_plots=options.numberofplots, sdssUnit=options.sdssUnit)    
+    run(options.file,options.columns,output_directory=options.output,plots_directory=options.plots,extension=options.extension,racol=options.racol,deccol=options.deccol,bootstrap_num=options.bootstrap, add2MASS=options.add2MASSJ, addSDSS=options.addSDSSgriz, addPanSTARRS=options.addPanSTARRS, addGaia=options.addGaia, number_of_plots=options.numberofplots, sdssUnit=options.sdssUnit)    

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os.path, pylab, string, re, time
+import sys, os.path, string, re, time
 import astropy.io.fits as pyfits
 from glob import glob
 from copy import copy
@@ -47,10 +47,7 @@ def readtxtfile(file):
             file_out.append([(x) for x in res])
     return file_out
 
-
-def synth(p,spectra,filters,show=False):
-
-    mags = {} 
+def old_synth():
 
     for filt in filters:
         specall = scipy.zeros(len(spectra[0][0][:,1]))
@@ -66,18 +63,34 @@ def synth(p,spectra,filters,show=False):
             if False: #string.find(filt_name,'SDSS') != -1:
                 pylab.plot(spec[:,0],resampFilter) 
                 pylab.show()
-            ''' need to multiply by polynomial '''
+            ## need to multiply by polynomial
             val += abs(coeff)*sum(specStep * resampFilter[:-1] * spec[:-1,0] * spec[:-1,1]) # photon counting!!
 
         logEff = scipy.log10(val)                                        
         logNorm = scipy.log10(sum(resampFilter[:-1]*c*specStep/spec[:-1,0]))
-        mag = 2.5*(logNorm - logEff) # to calculated an AB magnitude
+        mag = 2.5*(logNorm - logEff) # to calculate an AB magnitude
+
+def synth(p,spectra,filters,show=False):
+
+    mags = {} 
+
+    for filt in filters:
+        specall = scipy.zeros(len(spectra[0][0][:,1]))
+        val = 0 
+        for coeff,specfull in [[p[0],spectra[0]]]: #,[p[1],spectra[1]],[1.-p[0]-p[1],spectra[2]]]: 
+            #print filt['name'], coeff
+            spec = specfull[0]
+            specStep = spec[1:,0] - spec[0:-1,0] # wavelength increment                   
+            resampFilter = filt['spline'](spec[:,0]) # define an interpolating function
+
+            val += abs(coeff)*sum(specStep * resampFilter[:-1] * spec[:-1,0] * spec[:-1,1]) # photon counting!!
+
+        logEff = scipy.log10(val)                                        
+        logNorm = scipy.log10(3631*sum(resampFilter[:-1]*c*specStep/spec[:-1,0]))
+        mag = 2.5*(logNorm - logEff - 23) # to calculate an AB magnitude
     
         mags[filt['name']]=mag
 
-    if show:
-        pylab.plot(spec[:,0], specall)
-        pylab.show()
     return mags
 
 def cas_locus(fits=True):
@@ -107,6 +120,7 @@ def synthesize_expected_locus_for_observations(filters):
         SDSS_filters[i].update(filter_info[i])
 
     loci = [a[:-1] for a in open(os.environ['BIGMACS'] + '/LOCUS_SPECTRA/spliced_spectra','r').readlines()]
+    #loci = [a[:-1] for a in open(os.environ['BIGMACS'] + '/XSL_Pic/spliced_spectra','r').readlines()]
 
     locus = []
 
@@ -117,6 +131,7 @@ def synthesize_expected_locus_for_observations(filters):
         locus_index = int(locus_point.replace('.dat',''))
         print 'CONVOLVING RESPONSE FUNCTIONS WITH SPECTRUM ' + str(locus_point)
         stitchSpec = scipy.genfromtxt(os.environ['BIGMACS'] + '/LOCUS_SPECTRA/' + locus_point)
+        #stitchSpec = scipy.genfromtxt(os.environ['BIGMACS'] + '/XSL_Pic/' + locus_point)
 
         ''' do not synthesize 2MASS filters '''
         mags = synth([1.,0,0,0],[[stitchSpec]],filter(lambda x: string.find(x['filter'],'2MASS') == -1, filters + SDSS_filters)) 
@@ -226,14 +241,6 @@ def compute_ext(filt, N=0.78):
                                    bounds_error = True, 
                                    )
 
-
-    #s_od = N*odonnell_ext_1_um*odonnell(scipy.arange(3000,20000))
-    #s_od = fitzpatrick(scipy.arange(3000,20000))
-    #import pylab
-    #pylab.clf()
-    #pylab.plot(scipy.arange(3000,20000),s_od)
-    #pylab.xlim([3000,20000])
-    #pylab.show()
 
     ''' source flux is ergs / s / Ang '''
     filt_wavelength = filt['wavelength']

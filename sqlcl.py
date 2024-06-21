@@ -44,6 +44,57 @@ def query(sql,url=default_url,fmt=default_fmt):
     params = urllib.urlencode({'cmd': fsql, 'format': fmt})
     return urllib.urlopen(url+params)    
 
+def gaia_query(file, query, EBV):
+	from astroquery.gaia import Gaia
+	from astropy.table import Table
+	import numpy as np
+
+	''' Que Gaia SQL server '''
+	job = Gaia.launch_job_async(query)
+	gaia_data = job.get_results()
+	print "obtained gaia data"
+
+
+	''' calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams) '''
+        colors = ['g','bp','rp']   
+	coeffs = {'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
+	         'kbp':[1.1517, -0.0871, -0.0333, 0.0173, -0.0230, 0.0006, 0.0043], \
+		 'krp':[0.6104, -0.0170, -0.0026, -0.0017, -0.0078, 0.00005, 0.0006] }
+
+	Av = 3.1 * EBV
+	bp_rp = gaia_data['bp_rp']
+	c_terms = [np.ones(bp_rp.shape), bp_rp, bp_rp**2, bp_rp**3, Av, Av**2, bp_rp*Av]
+
+	k_g, k_bp, k_rp = 0.0, 0.0, 0.0
+	for i in range(len(c_terms)):
+		k_g += coeffs['kg'][i] * c_terms[i]
+		k_bp += coeffs['kbp'][i] * c_terms[i]
+		k_rp += coeffs['krp'][i] * c_terms[i]
+
+	a_g = Table.Column( name = 'a_g', data = k_g * Av)
+	a_bp = Table.Column( name = 'a_bp', data = k_bp * Av)
+	a_rp = Table.Column( name = 'a_rp', data = k_rp * Av)
+
+	gaia_data.add_column(a_g)
+	gaia_data.add_column(a_bp)
+	gaia_data.add_column(a_rp)
+
+	''' calculate magnitude  and err '''
+	zps_ab = { 'g':25.7934, 'bp':25.3806, 'rp':25.1161}
+	for c in colors:
+		ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c]  - gaia_data['a_' + c]) ## zp and ext
+		#ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c] ) ## zp but no ext
+		mag_err = Table.Column( name = 'phot_'+ c + '_mean_mag_error', data = 2.5 * gaia_data['phot_'+ c +'_mean_flux_error'] / gaia_data['phot_' + c +'_mean_flux'] )
+
+		gaia_data.add_column(ab_mag)
+		gaia_data.add_column(mag_err)
+
+		gaia_data.remove_column('phot_' + c +'_mean_flux')
+		gaia_data.remove_column('phot_' + c +'_mean_flux_error')
+
+	gaia_data.write(file + '.csv', format='ascii.csv', overwrite=True)
+
+
 def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
     import json, requests
     '''
@@ -101,7 +152,7 @@ def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
     ebv = json.loads(r.text)
     return ebv['EBV_SFD']
 
-def pan_catalog_cut(cat_raw_name, RA, DEC):
+def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     "Apply several cuts and extinction correction to panstarrs catalog"
     from astropy.table import Table
     import itertools, numpy as np
@@ -115,16 +166,26 @@ def pan_catalog_cut(cat_raw_name, RA, DEC):
     psfMags = [c +'FPSFMag' for c in colors]
     KronMags = [c + 'FKronMag' for c in colors] 
     
+    ## delete none-detections
+    flag = np.ones(N, dtype=bool)
+    for psfMag in psfMags:
+	    flag *= (catalog_raw[psfMag] > 0)
+	    flag *= (catalog_raw[psfMag] < 30)
+
+    index = np.where(flag==False)
+    catalog_raw.remove_rows(index[0])
 
     ## separate stars from galaxies
     ## https://confluence.stsci.edu/display/PANSTARRS/How+to+separate+stars+and+galaxies
+
+    N = len(catalog_raw) 
     flag = np.ones(N, dtype=bool)
     for psfMag, KronMag in zip(psfMags, KronMags):
         	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] < 0.05)
         	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] > -0.2)
     
-    index = np.where(flag==False)[0]
-    catalog_raw.remove_rows(index)    ## remove galaxies
+    index = np.where(flag==False)
+    catalog_raw.remove_rows(index[0])    ## remove galaxies
     
     for KronMag in KronMags:
     	catalog_raw.remove_column(KronMag)  ## remove KronMags
@@ -137,33 +198,27 @@ def pan_catalog_cut(cat_raw_name, RA, DEC):
         catalog_raw[psfMag] -= EBV * coeffs[color]
         print 'dust extinction for PanSTARRS band ' + color + ':', EBV*coeffs[color]
 
-    ## use psfMags as Pogson Mags
-    #for c in colors:
-    #    catalog_raw['psfPogCorr_'+c] = catalog_raw['psfMagCorr_'+c]
-    #    catalog_raw['psfPogErr_'+c] = catalog_raw['psfMagErr_'+c]
+    catalog_raw.write(file + ".csv", format='ascii.csv', overwrite=True)
+    return file + ".csv"
 
-    
-    catalog_raw.write("cat_pan.csv", format='ascii.csv') 
-    return "cat_pan.csv"
-
-def pan_query(query, RA, DEC):
+def pan_query(file, query, RA, DEC):
     "Run panstarrs query via Casjobs"
     import os, glob
 
     bashCommand = []
     bashCommand.append('rm *.csv')
+    bashCommand.append('java -jar ${CasJobs} execute -t mydb/1 \"drop table big_macs_db\" ')
     bashCommand.append('java -jar ${CasJobs} run ' + "\'" + query + "\'")
     bashCommand.append('java -jar ${CasJobs} extract -b big_macs_db -type csv -d -F')
     bashCommand.append('java -jar ${CasJobs} execute -t mydb/1 \"drop table big_macs_db\" ')
 
     for c in bashCommand:
-        os.system(c)
+	os.system(c)
 
     cat_raw_name = glob.glob("./*.csv")[0]
-    cat_pan_name = pan_catalog_cut(cat_raw_name, RA, DEC)
+    cat_pan_name = pan_catalog_cut(file, cat_raw_name, RA, DEC)
 
     return cat_pan_name
-
 
 def write_header(ofp,pre,url,qry):
     import  time
@@ -228,3 +283,8 @@ def main(argv):
 if __name__=='__main__':
     import sys
     main(sys.argv)
+
+
+
+
+
