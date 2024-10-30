@@ -157,14 +157,18 @@ def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     from astropy.table import Table
     import itertools, numpy as np
         
+    print(cat_raw_name)
     catalog_raw = Table.read(cat_raw_name, format='ascii.csv', guess=False)
+    catalog_raw.rename_column('raMean', 'ra')
+    catalog_raw.rename_column('decMean', 'dec')
+
     N = len(catalog_raw) 
     
     #colors = ['g','r','i','z','y']
     colors = ['r']
 
-    psfMags = [c +'FPSFMag' for c in colors]
-    KronMags = [c + 'FKronMag' for c in colors] 
+    psfMags = [c +'PSFMag' for c in colors]
+    KronMags = [c + 'KronMag' for c in colors] 
     
     ## delete none-detections
     flag = np.ones(N, dtype=bool)
@@ -201,21 +205,14 @@ def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     catalog_raw.write(file + ".csv", format='ascii.csv', overwrite=True)
     return file + ".csv"
 
-def pan_query(file, query, RA, DEC):
-    "Run panstarrs query via Casjobs"
+def pan_query(file, cmd, RA, DEC):
+
     import os, glob
 
-    bashCommand = []
-    bashCommand.append('rm *.csv')
-    bashCommand.append('java -jar ${CasJobs} execute -t mydb/1 \"drop table big_macs_db\" ')
-    bashCommand.append('java -jar ${CasJobs} run ' + "\'" + query + "\'")
-    bashCommand.append('java -jar ${CasJobs} extract -b big_macs_db -type csv -d -F')
-    bashCommand.append('java -jar ${CasJobs} execute -t mydb/1 \"drop table big_macs_db\" ')
+    if not os.path.exists(file +'.pan_raw.csv'):
+    	os.system(cmd)
 
-    for c in bashCommand:
-	os.system(c)
-
-    cat_raw_name = glob.glob("./*.csv")[0]
+    cat_raw_name = file + '.pan_raw.csv'
     cat_pan_name = pan_catalog_cut(file, cat_raw_name, RA, DEC)
 
     return cat_pan_name

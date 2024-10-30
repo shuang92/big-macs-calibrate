@@ -127,23 +127,39 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
                     catalogStars[returned_keys[i]].append(float(res[i]))  
 
     elif survey == 'PanSTARRS':
+
         #colors = ['g','r','i','z','y']   
         colors = ['r']   
 
-        keys = ['o.raMean as ra','o.decMean as dec']
-        keys += ['m.%(color)sFPSFMag' % {'color':color} for color in colors ] 
-        keys += ['m.%(color)sFKronMag' % {'color':color} for color in colors ]
-        keys += ['m.%(color)sFPSFMagErr' % {'color':color} for color in colors ] 
-        wherekeys = ['n%(color)s > 0 ' % {'color':color} for color in colors ] 
+        keys = ['raMean','decMean']
+        keys += ['%(color)sPSFMag' % {'color':color} for color in colors ] 
+        keys += ['%(color)sKronMag' % {'color':color} for color in colors ]
+        keys += ['%(color)sPSFMagErr' % {'color':color} for color in colors ] 
+
+	columns = '['
+	for key in keys:
+		columns += key + ','
+	columns = columns[:-1] + ']'
+
+ 	cmd = "curl -g \'https://catalogs.mast.stsci.edu/api/v0.1/panstarrs/dr2/stack.csv"
+        cmd += "?ra=" + str(RA) + "&dec=" + str(DEC) + "&radius=" + str(RADIUS/60) + "&columns=" + columns   ## RADIUS in arcmin -> degree
+	cmd += "&nDetections>1"
+	for c in colors:
+		cmd += "&" + c + "KronMag>0"
+		cmd += "&n" + c + ">0"
+	cmd += "\' > " + file + ".pan_raw.csv"
+	print(cmd)
+
+	pan_bands = ''
+	for c in colors:
+		pan_bands += c
+	print("Query PanSTARRS " + pan_bands + " for reference")
+	print(cmd)
         
         import sqlcl
-        query = 'select ' + reduce(lambda x,y: x + ',' + y, keys) + ' into big_macs_db from fGetNearbyObjEq(' + str(RA) + ',' + str(DEC) + ',' + str(RADIUS) + ' ) nb '
-        query += 'inner join ObjectThin o on o.objid=nb.objid and o.nDetections>1 and ' + reduce(lambda x,y: x + ' and ' + y,wherekeys)
-	query += 'inner join ForcedMeanObject m on o.objid=m.objid' 
-    	print query
 
-	#ref_cat_name = sqlcl.pan_query(file, query, RA, DEC)
-	ref_cat_name = file + '.csv'
+	ref_cat_name = sqlcl.pan_query(file, cmd, RA, DEC)
+
         with open(ref_cat_name) as ref_cat:
             lines = ref_cat.readlines()
         print len(lines) - 1, 'STAR(S) FOUND'
@@ -501,9 +517,9 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
         for i in range(len(input_info)):
             input_info[i]['HOLD_VARY'] = 'VARY'
 
-        #panstarrs_info = [{'mag':c + 'FPSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'FPSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r','i','z','y'] ]
-        panstarrs_info = [{'mag':c + 'FPSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'FPSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r'] ]
-	#panstarrs_info += [{'mag':c + 'FPSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'FPSFMagErr', 'HOLD_VARY':'VARY', 'ZP':0.} for c in ['z'] ]
+        #panstarrs_info = [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r','i','z','y'] ]
+        panstarrs_info = [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r'] ]
+	#panstarrs_info += [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'VARY', 'ZP':0.} for c in ['z'] ]
 
         for filt_dict in panstarrs_info:
             ''' avoid duplicate filters -- will override '''
@@ -1012,7 +1028,7 @@ def fit(table, input_info_unsorted, mag_locus,
                 oa = copy(input_info)
                 oa.sort(sort_wavelength)
 
-		oa_no_ref = filter(lambda x: string.find(x['mag'],'psfMag') == -1 and string.find(x['mag'], 'phot_g_mean_mag') == -1 and string.find(x['mag'], 'FPSFMag') == -1, oa)
+		oa_no_ref = filter(lambda x: string.find(x['mag'],'psfMag') == -1 and string.find(x['mag'], 'phot_g_mean_mag') == -1 and string.find(x['mag'], 'PSFMag') == -1, oa)
 
 
                 def plot_combinations(input):
@@ -1162,7 +1178,7 @@ def fit(table, input_info_unsorted, mag_locus,
                 def order_plots(a,b):
                     if string.find(a,'psfMag') != -1 and string.find(b,'psfMag') == -1:
 			    return 1 
-		    elif string.find(a,'FPSFMag') != -1 and string.find(b,'FPSFMag') == -1:
+		    elif string.find(a,'PSFMag') != -1 and string.find(b,'PSFMag') == -1:
 			    return 1
 		    elif string.find(a,'phot_g_mean_mag') != -1 and string.find(b,'phot_g_mean_mag') == -1:
 			    return 1
