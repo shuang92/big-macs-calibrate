@@ -996,8 +996,8 @@ def fit(table, input_info_unsorted, mag_locus,
                 print 'red chi^2', '%.5f' % redchi
                 print 'iteration', itr
 
-                #if iteration is 'full' and (itr % plot_iteration_increment == 0 or savefig is not None):
-                #    plot_progress(pars,stat_tot,savefig)
+                if iteration is 'full' and (itr % plot_iteration_increment == 0 or savefig is not None):
+                    plot_progress(pars,stat_tot,savefig)
                 itr += 1
 
                 if residuals:
