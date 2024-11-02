@@ -8,6 +8,8 @@ if __name__ != '__main__':
     import astropy.io.fits as pyfits
     import numpy as np
     import matplotlib as mpl
+    mpl.use('Agg')
+    from matplotlib import pyplot as plt
     from scipy import linalg
     from scipy import optimize
     from glob import glob
@@ -713,9 +715,9 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     if found2MASS:
         output_string += '#  USED ' + str(found2MASS) + ' MATCHED 2MASS STARS \n'
     if foundPanSTARRS:
-        output_string += '#  USED ' + str(foundPanSTARRS) + ' MATCHED 2MASS STARS \n'
+        output_string += '#  USED ' + str(foundPanSTARRS) + ' MATCHED PanSTARRS STARS \n'
     if foundGaia:
-        output_string += '#  USED ' + str(foundGaia) + ' MATCHED 2MASS STARS \n'
+        output_string += '#  USED ' + str(foundGaia) + ' MATCHED Gaia STARS \n'
 
     output_string += '# ' + str(gallat) + ' ' + str(gallong) + ' galactic latitude longitude \n'
     output_string += '# ' + str(results['redchi']) + ' reduced chi squared value \n'
@@ -1115,8 +1117,8 @@ def fit(table, input_info_unsorted, mag_locus,
 
                         #print len(x_color), len(x_color) 
 
-			mpl.pyplot.clf()                                                                            
-                        mpl.pyplot.axes([0.15,0.125,0.95-0.15,0.95-0.125])
+			plt.clf()                                                                            
+                        plt.axes([0.15,0.125,0.95-0.15,0.95-0.125])
 
                         x_a = c1_1['plotName'] 
                         x_b = c1_2['plotName'] 
@@ -1135,30 +1137,30 @@ def fit(table, input_info_unsorted, mag_locus,
                         units = " ${\\rm (mag)}$"
                         x_color_name = x_a + '  -  ' + x_b + units
                         y_color_name = y_a + '  -  ' + y_b + units 
-                        mpl.pyplot.xlabel(x_color_name)
-                        mpl.pyplot.ylabel(y_color_name)
+                        plt.xlabel(x_color_name)
+                        plt.ylabel(y_color_name)
 
                         if len(x_color):
-                            mpl.pyplot.scatter(x_color,y_color,color='#0066ff',s=4,marker='o', zorder=20)
-                            mpl.pyplot.errorbar(x_color,y_color,xerr=x_err,yerr=y_err,marker=None,fmt='o',ecolor="#e8e8e8",ms=1, mew=1, zorder=1) #,mc='none')   
+                            plt.scatter(x_color,y_color,color='#0066ff',s=4,marker='o', zorder=20)
+                            plt.errorbar(x_color,y_color,xerr=x_err,yerr=y_err,marker=None,fmt='o',ecolor="#e8e8e8",ms=1, mew=1, zorder=1) #,mc='none')   
 
                             c1_locus = locus_matrix[0,:,ind(c1_band1)] - locus_matrix[0,:,ind(c1_band2)]
                             c2_locus = locus_matrix[0,:,ind(c2_band1)] - locus_matrix[0,:,ind(c2_band2)]
-                            mpl.pyplot.plot(c1_locus,c2_locus,'r-',linewidth=1,zorder=30)
-                            mpl.pyplot.scatter(c1_locus,c2_locus,color='red',s=7,marker='o',zorder=30)
+                            plt.plot(c1_locus,c2_locus,'r-',linewidth=1,zorder=30)
+                            plt.scatter(c1_locus,c2_locus,color='red',s=7,marker='o',zorder=30)
 
                             if pre_zps:
-                                mpl.pyplot.errorbar(pre_x_color,pre_y_color,xerr=x_err,yerr=y_err,fmt='o',c='green')
-                                mpl.pyplot.scatter(pre_x_color,pre_y_color,c='green')
+                                plt.errorbar(pre_x_color,pre_y_color,xerr=x_err,yerr=y_err,fmt='o',c='green')
+                                plt.scatter(pre_x_color,pre_y_color,c='green')
 
                             x_diff = (c1_locus[-1] - c1_locus[0])
                             y_diff = (c2_locus[-1] - c2_locus[0])
-                            mpl.pyplot.arrow(c1_locus[0]+x_diff*0.1,c2_locus[-1]-y_diff*0.1,x_extinct,y_extinct,width=0.01,color='black')
+                            plt.arrow(c1_locus[0]+x_diff*0.1,c2_locus[-1]-y_diff*0.1,x_extinct,y_extinct,width=0.01,color='black')
 
                             if not publish:
-                                mpl.pyplot.text(c1_locus[0]+x_diff*0.1 + x_extinct,c2_locus[-1]-y_diff*0.1 + y_extinct,'  ext. vec.',color='black')
+                                plt.text(c1_locus[0]+x_diff*0.1 + x_extinct,c2_locus[-1]-y_diff*0.1 + y_extinct,'  ext. vec.',color='black')
                             if stat_tot is not None and not publish:
-                                mpl.pyplot.title('N=' + str(len(x_color)) + ' chi$^{2}$=' + ('%.1f' % stat_tot) + ' ' + iteration + ' ' + outliers + ' GALLAT=' + str(gallat))
+                                plt.title('N=' + str(len(x_color)) + ' chi$^{2}$=' + ('%.1f' % stat_tot) + ' ' + iteration + ' ' + outliers + ' GALLAT=' + str(gallat))
 
                             fit_band_zps = reduce(lambda x,y: x + y, [z[-2:].replace('C','').replace('-','') for z in [a['mag'] for a in input_info]])
                             print 'savefig', savefig
@@ -1172,7 +1174,7 @@ def fit(table, input_info_unsorted, mag_locus,
 
                                    
                                     print mpl.rcParams['figure.figsize']
-                                    mpl.pyplot.savefig(file)
+                                    plt.savefig(file)
 
 
                 def order_plots(a,b):
@@ -1437,6 +1439,8 @@ if __name__ == '__main__':
     import random, scipy, commands, anydbm
     import astropy.io.fits as pyfits
     import matplotlib as mpl
+    mpl.use('Agg')
+    from matplotlib import pyplot as plt
     import numpy as np
     from astroquery.gaia import Gaia
     from astropy.table import Table
