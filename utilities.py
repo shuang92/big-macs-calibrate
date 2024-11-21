@@ -33,7 +33,7 @@ def add_SeqNr(file,extension=1):
     outcat = file.replace('.fits','.seqnr.fits')
     os.system('rm ' + outcat)
     hdulist.writeto(outcat)
-    print 'WRITTEN TO ', outcat
+    print('WRITTEN TO ', outcat)
     
 
 def readtxtfile(file):
@@ -48,17 +48,17 @@ def readtxtfile(file):
     return file_out
 
 def old_synth():
-
+    import numpy as np
     for filt in filters:
-        specall = scipy.zeros(len(spectra[0][0][:,1]))
+        specall = np.zeros(len(spectra[0][0][:,1]))
         val = 0 
         for coeff,specfull  in [[p[0],spectra[0]]]: #,[p[1],spectra[1]],[1.-p[0]-p[1],spectra[2]]]: 
             spec = specfull[0]
             specStep = spec[1:,0] - spec[0:-1,0] # wavelength increment                   
-            #print specStep[400:600], 'specStep'
+            #print(specStep[400:600], 'specStep')
             resampFilter = filt['spline'](spec[:,0]) # define an interpolating function
-            #print resampFilter
-            #print filt_name
+            #print(resampFilter
+            #print(filt_name)
 
             if False: #string.find(filt_name,'SDSS') != -1:
                 pylab.plot(spec[:,0],resampFilter) 
@@ -66,27 +66,27 @@ def old_synth():
             ## need to multiply by polynomial
             val += abs(coeff)*sum(specStep * resampFilter[:-1] * spec[:-1,0] * spec[:-1,1]) # photon counting!!
 
-        logEff = scipy.log10(val)                                        
-        logNorm = scipy.log10(sum(resampFilter[:-1]*c*specStep/spec[:-1,0]))
+        logEff = np.log10(val)                                        
+        logNorm = np.log10(sum(resampFilter[:-1]*c*specStep/spec[:-1,0]))
         mag = 2.5*(logNorm - logEff) # to calculate an AB magnitude
 
 def synth(p,spectra,filters,show=False):
-
+    import numpy as np
     mags = {} 
 
     for filt in filters:
-        specall = scipy.zeros(len(spectra[0][0][:,1]))
+        specall = np.zeros(len(spectra[0][0][:,1]))
         val = 0 
         for coeff,specfull in [[p[0],spectra[0]]]: #,[p[1],spectra[1]],[1.-p[0]-p[1],spectra[2]]]: 
-            #print filt['name'], coeff
+            #print(filt['name'], coeff)
             spec = specfull[0]
             specStep = spec[1:,0] - spec[0:-1,0] # wavelength increment                   
             resampFilter = filt['spline'](spec[:,0]) # define an interpolating function
 
             val += abs(coeff)*sum(specStep * resampFilter[:-1] * spec[:-1,0] * spec[:-1,1]) # photon counting!!
 
-        logEff = scipy.log10(val)                                        
-        logNorm = scipy.log10(3631*sum(resampFilter[:-1]*c*specStep/spec[:-1,0]))
+        logEff = np.log10(val)                                        
+        logNorm = np.log10(3631*sum(resampFilter[:-1]*c*specStep/spec[:-1,0]))
         mag = 2.5*(logNorm - logEff - 23) # to calculate an AB magnitude
     
         mags[filt['name']]=mag
@@ -104,13 +104,14 @@ def cas_locus(fits=True):
         m = pickle.Unpickler(f)
         locus_list_mag = m.load()
 
-    #print locus_list_mag
+    #print(locus_list_mag)
 
 
     return locus_list_mag
 
 
 def synthesize_expected_locus_for_observations(filters):
+    import numpy as np
     c_locus = cas_locus()    
 
     ''' add SDSS filters '''        
@@ -124,17 +125,17 @@ def synthesize_expected_locus_for_observations(filters):
 
     locus = []
 
-    print 'STARTING SAMPLING LOCUS'
+    print('STARTING SAMPLING LOCUS')
 
     for i in range(len(loci[:])):
         locus_point = loci[i]
         locus_index = int(locus_point.replace('.dat',''))
-        print 'CONVOLVING RESPONSE FUNCTIONS WITH SPECTRUM ' + str(locus_point)
-        stitchSpec = scipy.genfromtxt(os.environ['BIGMACS'] + '/LOCUS_SPECTRA/' + locus_point)
+        print('CONVOLVING RESPONSE FUNCTIONS WITH SPECTRUM ' + str(locus_point))
+        stitchSpec = np.genfromtxt(os.environ['BIGMACS'] + '/LOCUS_SPECTRA/' + locus_point)
         #stitchSpec = scipy.genfromtxt(os.environ['BIGMACS'] + '/XSL_Pic/' + locus_point)
 
         ''' do not synthesize 2MASS filters '''
-        mags = synth([1.,0,0,0],[[stitchSpec]],filter(lambda x: string.find(x['filter'],'2MASS') == -1, filters + SDSS_filters)) 
+        mags = synth([1.,0,0,0],[[stitchSpec]],filter(lambda x: x['filter'].find('2MASS') == -1, filters + SDSS_filters)) 
 
         ''' not synthesizing the 2MASS magnitudes '''
         for filt in filters:
@@ -143,12 +144,12 @@ def synthesize_expected_locus_for_observations(filters):
                 mags[filt['mag']] = (mags['ZSDSS'] - c_locus.data.field('ZSDSS_JTMASS')[locus_index]) #+ (mags['ISDSS'] - c_locus['ZSDSS_JTMASS'][2*i]))/2.
 
 
-                #print mags[filt['mag']], mags['ZSDSS'], c_locus.data.field('ZSDSS_JTMASS')
+                #print(mags[filt['mag']], mags['ZSDSS'], c_locus.data.field('ZSDSS_JTMASS'))
                 #raw_input()
 
         locus.append(mags)
 
-    print 'FINISHED SAMPLING LOCUS'
+    print('FINISHED SAMPLING LOCUS')
     return locus
 
 
@@ -180,7 +181,7 @@ def parse_columns(columns_description, fitSDSS=False, noHoldExceptSDSS=False, no
     
 
 def get_filters(flist = [['USDSS','SDSS-u.res'],['GSDSS','SDSS-g.res'],['RSDSS','SDSS-r.res'],['ISDSS','SDSS-i.res'],['ZSDSS','SDSS-z.res']]):
-
+    import numpy as np
     filt_dir = os.environ['BIGMACS'] + '/FILTERS/'
 
     #flist = [{'mag':'USDSS','filter':'SDSS-u.res'},{'mag':'GSDSS','filter':'SDSS-g.res'},{'mag':'RSDSS','filter':'SDSS-r.res'},{'mag':'ISDSS','filter':'SDSS-i.res'},{'mag':'ZSDSS','filter':'SDSS-z.res'}]
@@ -188,17 +189,17 @@ def get_filters(flist = [['USDSS','SDSS-u.res'],['GSDSS','SDSS-g.res'],['RSDSS',
     filters = []
     for filt_name, filt_file in flist:
         file = filt_dir + filt_file
-        filt = scipy.loadtxt(file)
+        filt = np.loadtxt(file)
         step = filt[1,0] - filt[0,0]
         if filt[0,0] > filt[-1,0]:
             filt_list = filt.tolist()
             filt_list.reverse()
-            filt = scipy.array(filt_list)
+            filt = np.array(filt_list)
 
         filterSpline = scipy.interpolate.interp1d(filt[:,0], filt[:,1], 
                                        bounds_error = False, 
                                        fill_value = 0.)
-        filters.append({'wavelength':filt[:,0],'response':filt[:,1],'spline':copy(filterSpline),'step':copy(step),'name':copy(filt_name),'center wavelength': scipy.average(filt[:,0],weights=filt[:,1])})
+        filters.append({'wavelength':filt[:,0],'response':filt[:,1],'spline':copy(filterSpline),'step':copy(step),'name':copy(filt_name),'center wavelength': np.average(filt[:,0],weights=filt[:,1])})
 
     return filters
 
@@ -218,10 +219,11 @@ def odonnell(input,wavelength=True):
 ''' compute filter extinction coefficients from O'Donnell extinction law '''
 def compute_ext(filt, N=0.78):
 
-    print '''COMPUTING EXTINCTION COEFFICIENT USING FITZPATRICK99 EXTINCTION LAW'''
+    print('''COMPUTING EXTINCTION COEFFICIENT USING FITZPATRICK99 EXTINCTION LAW''')
     odonnell_ext_1_um = 1.32 # A(1 um) / E(B-V) where R_v = 3.1
     import scipy, math
-    sed = scipy.loadtxt(os.environ['BIGMACS'] + '/munari.sed')
+    import numpy as np
+    sed = np.loadtxt(os.environ['BIGMACS'] + '/munari.sed')
     ''' now stitch together with blackbody spectrum '''    
     longwave = sed[-1,0]    
     flux = sed[-1,1]
@@ -231,11 +233,10 @@ def compute_ext(filt, N=0.78):
 
     a = flux / longwave**-3.
 
-    for wave in scipy.arange(11500,20000,25):
+    for wave in np.arange(11500,20000,25):
         wavelength.append(wave)
         source.append(a*wave**-3.)
 
-    import scipy
     from scipy import interpolate
     sedSpline = interpolate.interp1d(wavelength, source, 
                                    bounds_error = True, 
@@ -245,7 +246,7 @@ def compute_ext(filt, N=0.78):
     ''' source flux is ergs / s / Ang '''
     filt_wavelength = filt['wavelength']
     filt_response = filt['response']
-    throw_out = scipy.zeros(len(filt_wavelength))
+    throw_out = np.zeros(len(filt_wavelength))
 
     ''' trim off zero-valued tails of response function'''
     for i in range(len(filt_wavelength)):
@@ -261,14 +262,14 @@ def compute_ext(filt, N=0.78):
     filt_wavelength = filt_wavelength[throw_out==0.] 
     filt_response = filt_response[throw_out==0.] 
 
-    #print scipy.array([(filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))])
-    #print scipy.array([fitzpatrick(filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))])
-    numerator = scipy.array([10.**(fitzpatrick(filt_wavelength[i])/-2.5)*sedSpline(filt_wavelength[i])*filt_wavelength[i]*(filt_response[i])*(filt_wavelength[i+1]-filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))])
-    denom = scipy.array([sedSpline(filt_wavelength[i])*filt_wavelength[i]*(filt_response[i])*(filt_wavelength[i+1]-filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))])
+    #print(scipy.array([(filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))]))
+    #print(scipy.array([fitzpatrick(filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))]))
+    numerator = np.array([10.**(fitzpatrick(filt_wavelength[i])/-2.5)*sedSpline(filt_wavelength[i])*filt_wavelength[i]*(filt_response[i])*(filt_wavelength[i+1]-filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))])
+    denom = np.array([sedSpline(filt_wavelength[i])*filt_wavelength[i]*(filt_response[i])*(filt_wavelength[i+1]-filt_wavelength[i]) for i in range(len(filt_wavelength[:-1]))])
 
     coeff = -2.5*math.log10(numerator.sum()/denom.sum()) 
 
-    print filt['name'], coeff, 'coeff'
+    print(filt['name'], coeff, 'coeff')
     return coeff
 
 

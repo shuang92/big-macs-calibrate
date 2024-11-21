@@ -1,3 +1,4 @@
+
 #!/usr/local/bin/python
 """>> sqlcl << command line query tool by Tamas Budavari <budavari@jhu.edu>
 Usage: sqlcl [options] sqlfile(s)
@@ -24,9 +25,9 @@ default_fmt='csv'
 
 def usage(status, msg=''):
     "Error message and usage"
-    print __doc__
+    print(__doc__)
     if msg:
-        print '-- ERROR: %s' % msg
+        print('-- ERROR: %s' % msg)
     sys.exit(status)
 
 def filtercomment(sql):
@@ -42,62 +43,62 @@ def query(sql,url=default_url,fmt=default_fmt):
     import urllib
     fsql = filtercomment(sql)
     params = urllib.urlencode({'cmd': fsql, 'format': fmt})
+    print(url+params)
     return urllib.urlopen(url+params)    
 
 def gaia_query(file, query, EBV):
-	from astroquery.gaia import Gaia
-	from astropy.table import Table
-	import numpy as np
+    from astroquery.gaia import Gaia
+    from astropy.table import Table
+    import numpy as np
+    ''' Que Gaia SQL server '''
+    job = Gaia.launch_job_async(query)
+    gaia_data = job.get_results()
+    print("obtained gaia data")
 
-	''' Que Gaia SQL server '''
-	job = Gaia.launch_job_async(query)
-	gaia_data = job.get_results()
-	print "obtained gaia data"
 
-
-	''' calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams) '''
-        colors = ['g','bp','rp']   
-	coeffs = {'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
+	# calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams)
+    colors = ['g','bp','rp']
+    coeffs = {'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
 	         'kbp':[1.1517, -0.0871, -0.0333, 0.0173, -0.0230, 0.0006, 0.0043], \
 		 'krp':[0.6104, -0.0170, -0.0026, -0.0017, -0.0078, 0.00005, 0.0006] }
+    
+    Av = 3.1 * EBV
+    bp_rp = gaia_data['bp_rp']
+    c_terms = [np.ones(bp_rp.shape), bp_rp, bp_rp**2, bp_rp**3, Av, Av**2, bp_rp*Av]
+    
+    k_g, k_bp, k_rp = 0.0, 0.0, 0.0
+    for i in range(len(c_terms)):
+        k_g += coeffs['kg'][i] * c_terms[i]
+        k_bp += coeffs['kbp'][i] * c_terms[i]
+        k_rp += coeffs['krp'][i] * c_terms[i]
+    
+    a_g = Table.Column( name = 'a_g', data = k_g * Av)
+    a_bp = Table.Column( name = 'a_bp', data = k_bp * Av)
+    a_rp = Table.Column( name = 'a_rp', data = k_rp * Av)
+    
+    gaia_data.add_column(a_g)
+    gaia_data.add_column(a_bp)
+    gaia_data.add_column(a_rp)
 
-	Av = 3.1 * EBV
-	bp_rp = gaia_data['bp_rp']
-	c_terms = [np.ones(bp_rp.shape), bp_rp, bp_rp**2, bp_rp**3, Av, Av**2, bp_rp*Av]
-
-	k_g, k_bp, k_rp = 0.0, 0.0, 0.0
-	for i in range(len(c_terms)):
-		k_g += coeffs['kg'][i] * c_terms[i]
-		k_bp += coeffs['kbp'][i] * c_terms[i]
-		k_rp += coeffs['krp'][i] * c_terms[i]
-
-	a_g = Table.Column( name = 'a_g', data = k_g * Av)
-	a_bp = Table.Column( name = 'a_bp', data = k_bp * Av)
-	a_rp = Table.Column( name = 'a_rp', data = k_rp * Av)
-
-	gaia_data.add_column(a_g)
-	gaia_data.add_column(a_bp)
-	gaia_data.add_column(a_rp)
-
-	''' calculate magnitude  and err '''
-	zps_ab = { 'g':25.7934, 'bp':25.3806, 'rp':25.1161}
-	for c in colors:
-		ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c]  - gaia_data['a_' + c]) ## zp and ext
-		#ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c] ) ## zp but no ext
-		mag_err = Table.Column( name = 'phot_'+ c + '_mean_mag_error', data = 2.5 * gaia_data['phot_'+ c +'_mean_flux_error'] / gaia_data['phot_' + c +'_mean_flux'] )
-
-		gaia_data.add_column(ab_mag)
-		gaia_data.add_column(mag_err)
-
-		gaia_data.remove_column('phot_' + c +'_mean_flux')
-		gaia_data.remove_column('phot_' + c +'_mean_flux_error')
-
-	gaia_data.write(file + '.csv', format='ascii.csv', overwrite=True)
+	# calculate magnitude  and err
+    zps_ab = { 'g':25.7934, 'bp':25.3806, 'rp':25.1161}
+    for c in colors:
+        ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c]  - gaia_data['a_' + c]) ## zp and ext
+        ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c] ) ## zp but no ext
+        mag_err = Table.Column( name = 'phot_'+ c + '_mean_mag_error', data = 2.5 * gaia_data['phot_'+ c +'_mean_flux_error'] / gaia_data['phot_' + c +'_mean_flux'] )
+        
+        gaia_data.add_column(ab_mag)
+        gaia_data.add_column(mag_err)
+        
+        gaia_data.remove_column('phot_' + c +'_mean_flux')
+        gaia_data.remove_column('phot_' + c +'_mean_flux_error')
+        
+    gaia_data.write(file + '.csv', format='ascii.csv', overwrite=True)
 
 
-def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
-    #import json, requests
+def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'): #holden# problem here, code is directly from api, but errors
     '''
+    import json, requests
     Send a line-of-sight reddening query to the Argonaut web server.
     
     Inputs:
@@ -123,12 +124,11 @@ def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
     
     Less information is returned in 'lite' mode, while in 'sfd' mode,
     the Schlegel, Finkbeiner & Davis (1998) E(B-V) is returned.
-    '''
-    ''' 
+    
     url = 'http://argonaut.skymaps.info/gal-lb-query-light'
     
     payload = {'mode': mode}
-    
+
     if coordsys.lower() in ['gal', 'g']:
         payload['l'] = lon
         payload['b'] = lat
@@ -146,11 +146,26 @@ def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
         r.raise_for_status()
     except requests.exceptions.HTTPError as e:
         print('Response received from Argonaut:')
-        print(r.text)
+        print(r.text) #requests.exceptions.HTTPError: 500 Server Error: INTERNAL SERVER ERROR for url: http://argonaut.skymaps.info/api/v2/sfd/query
         raise e
     
     ebv = json.loads(r.text)
     return ebv['EBV_SFD']
+    '''
+    '''
+    from astropy.coordinates import SkyCoord
+    import astropy.units as units
+    from dustmaps.bayestar import BayestarQuery
+    bayestar = BayestarQuery(map_fname="/fs/ddn/sdf/group/kipac/u/awright/bayestar2019.h5")
+    coords = SkyCoord(ra=lon*units.deg, dec=lat*units.deg,
+                    frame='icrs')
+
+    reddening = bayestar(coords, mode='median')
+    print("REDDENING")
+    print(reddening)
+    print(lon)
+    print(lat)
+    #print(reddening[best])
     '''
     from astropy.coordinates import SkyCoord
     import astropy.units as units
@@ -158,12 +173,23 @@ def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
     from dustmaps.sfd import fetch
     fetch() #get the sfd map
     sfd = SFDQuery()
-    coords = SkyCoord(ra=lon*units.deg, dec=lat*units.deg,
+    if coordsys.lower() in ['gal', 'g']:
+        coords = SkyCoord(l=lon*units.deg, b=lat*units.deg,
+                    frame='galactic')
+    elif coordsys.lower() in ['equ', 'e']:
+        coords = SkyCoord(ra=lon*units.deg, dec=lat*units.deg,
                     frame='icrs')
 
-    sfd_ebv = sfd(coords)
-    print("sfd EBV=",sfd_ebv)
-    return sfd_ebv 
+    ebv = sfd(coords)
+    return ebv
+
+    print("REDDENING")
+    print(reddening)
+    print(lon)
+    print(lat)
+
+
+    #return 0.025999999999999995
 
 def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     "Apply several cuts and extinction correction to panstarrs catalog"
@@ -186,8 +212,8 @@ def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     ## delete none-detections
     flag = np.ones(N, dtype=bool)
     for psfMag in psfMags:
-	    flag *= (catalog_raw[psfMag] > 0)
-	    flag *= (catalog_raw[psfMag] < 30)
+        flag *= (catalog_raw[psfMag] > 0)
+        flag *= (catalog_raw[psfMag] < 30)
 
     index = np.where(flag==False)
     catalog_raw.remove_rows(index[0])
@@ -198,32 +224,31 @@ def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     N = len(catalog_raw) 
     flag = np.ones(N, dtype=bool)
     for psfMag, KronMag in zip(psfMags, KronMags):
-        	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] < 0.05)
-        	flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] > -0.2)
+        flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] < 0.05)
+        flag *= (catalog_raw[psfMag] - catalog_raw[KronMag] > -0.2)
     
     index = np.where(flag==False)
     catalog_raw.remove_rows(index[0])    ## remove galaxies
     
     for KronMag in KronMags:
-    	catalog_raw.remove_column(KronMag)  ## remove KronMags
-
+        catalog_raw.remove_column(KronMag)  ## remove KronMags
+    
     ## dust extinction correction: http://argonaut.skymaps.info/
     ## coefficients: Schlafly & Finkbeiner, 2011
-    EBV = panstarrs_ebv(RA,DEC,mode='sfd')
+    EBV = panstarrs_ebv(RA,DEC,mode='sfd') #holden# problem here, can I just pass in EBV from earlier method call? API doesn't work
+    #EBV = 0.025999999999999995
     coeffs = {'g':3.172, 'r':2.271, 'i':1.682, 'z':1.322, 'y':1.087}
     for psfMag, color in zip(psfMags, colors):
         catalog_raw[psfMag] -= EBV * coeffs[color]
-        print 'dust extinction for PanSTARRS band ' + color + ':', EBV*coeffs[color]
-
+        print('dust extinction for PanSTARRS band ' + color + ':', EBV*coeffs[color])
     catalog_raw.write(file + ".csv", format='ascii.csv', overwrite=True)
     return file + ".csv"
 
 def pan_query(file, cmd, RA, DEC):
 
     import os, glob
-
     if not os.path.exists(file +'.pan_raw.csv'):
-    	os.system(cmd)
+        os.system(cmd)
 
     cat_raw_name = file + '.pan_raw.csv'
     cat_pan_name = pan_catalog_cut(file, cat_raw_name, RA, DEC)
@@ -251,7 +276,7 @@ def main(argv):
     # Parse command line
     try:
         optlist, args = getopt.getopt(argv[1:],'s:f:q:vlh?')
-    except getopt.error, e:
+    except getopt.error as e:
         usage(1,e)
         
     for o,a in optlist:
@@ -269,7 +294,7 @@ def main(argv):
     for fname in args:
         try:
             queries.append(open(fname).read())
-        except IOError, e:
+        except IOError as e:
             usage(1,e)
 
     # Run all queries sequentially
@@ -293,8 +318,3 @@ def main(argv):
 if __name__=='__main__':
     import sys
     main(sys.argv)
-
-
-
-
-
