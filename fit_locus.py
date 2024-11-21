@@ -110,7 +110,7 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
 
         returned_keys = re.split('\,',lines[1][:-1])
         saveKeys = returned_keys[2:]
-        print returned_keys
+        print "RETURNED KEYS: ", returned_keys
 
         ''' make a array with empty list with an entry for each key '''
         catalogStars = dict(zip(returned_keys,list([[] for x in returned_keys])))
@@ -136,8 +136,8 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
         keys = ['raMean','decMean']
         keys += ['%(color)sPSFMag' % {'color':color} for color in colors ] 
         keys += ['%(color)sKronMag' % {'color':color} for color in colors ]
-        keys += ['%(color)sPSFMagErr' % {'color':color} for color in colors ] 
-
+        keys += ['%(color)sPSFMagErr' % {'color':color} for color in colors ]
+         
 	columns = '['
 	for key in keys:
 		columns += key + ','
@@ -312,6 +312,7 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
             rows = len(inputcat.data)
 
             cols = []
+
             for column_name in necessary_columns: #inputcat.columns:
                 #cols.append(column)
                 cols.append(pyfits.Column(name=column_name,format='1E',array=inputcat.data.field(column_name)))
