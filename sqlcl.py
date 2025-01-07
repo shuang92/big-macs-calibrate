@@ -55,7 +55,7 @@ def gaia_query(file, query, EBV, DR):
         Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"  # Reselect Data Release 3, default
     import numpy as np
     ''' Que Gaia SQL server '''
-    job = Gaia.launch_job_async(query)
+    job = Gaia.launch_job_async(query,verbose=True)
     gaia_data = job.get_results() #Accessing data from query might be different for DR3 (different units??)
     print("obtained gaia data")
 
