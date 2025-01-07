@@ -23,6 +23,7 @@ if __name__ != '__main__':
 global itr
 itr = 0
 
+
 def fix_kpno():
     
     p = fits.open('./EXAMPLES/kpno.fits')
@@ -189,24 +190,55 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
                     catalogStars[returned_keys[i]].append(float(res[i]))
 
     elif survey == 'Gaia':
-        import sqlcl
-        ''' Gaia ADQL, Radius in degrees. Color excess cut:
-        https://gea.esac.esa.int/archive/documentation/GDR2/Data_processing/chap_cu5pho/sec_cu5pho_qa/ssec_cu5pho_excessflux.html '''
-        
-        RAD = RADIUS / 60
-        query = "SELECT ra, dec, bp_rp, \
+        """
+        #holden# figure out how to get this to work
+        SELECT ra, dec, bp_rp, \
                 phot_g_mean_flux, phot_g_mean_flux_error,  \
                             phot_bp_mean_flux, phot_bp_mean_flux_error, \
                             phot_rp_mean_flux, phot_rp_mean_flux_error \
-                            FROM gaiadr2.gaia_source \
+        """
+        import sqlcl
+        ''' Gaia ADQL, Radius in degrees. Color excess cut:
+        https://gea.esac.esa.int/archive/documentation/GDR2/Data_processing/chap_cu5pho/sec_cu5pho_qa/ssec_cu5pho_excessflux.html '''
+        DR = 3 #Release of Gaia to be Used, make sure to change res file too #cDR
+        if DR == 3:
+            color_range = "AND bp_rp >  -0.06 AND bp_rp < 2.5"
+        else:
+            #color_range = "AND bp_rp >  0.6 AND bp_rp < 1.6"
+            color_range = ""
+        
+        RAD = RADIUS / 60
+        if DR == 2:
+            query = "SELECT ra, dec, bp_rp, \
+                phot_g_mean_flux, phot_g_mean_flux_error,  \
+                            phot_bp_mean_flux, phot_bp_mean_flux_error, \
+                            phot_rp_mean_flux, phot_rp_mean_flux_error \
+                            FROM gaiadr" + str(DR) + ".gaia_source \
                             WHERE 1=CONTAINS( POINT('ICRS',ra,dec), BOX('ICRS'," + str(RA) + "," + str(DEC) + "," + str(RAD) + ", " + str(RAD) + ")) \
-                            AND phot_g_mean_mag<=19 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
-                            AND phot_bp_rp_excess_factor > (1.0 + 0.015*bp_rp*bp_rp) AND phot_bp_rp_excess_factor < (1.3 + 0.06*bp_rp*bp_rp) "
+                            AND phot_g_mean_mag<=22 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
+                            AND phot_bp_rp_excess_factor > (1.0 + 0.015*bp_rp*bp_rp) AND phot_bp_rp_excess_factor < (1.3 + 0.06*bp_rp*bp_rp) " \
+                            + str(color_range)
+                            ## AND bp_rp >  0.6 AND bp_rp < 1.6 "
+            #AND phot_g_mean_mag<=19
+        elif DR==3: 
+            #holden# maybe need to do something wit C*, bp_rp_excess_factor https://www.aanda.org/articles/aa/full_html/2023/06/aa43680-22/aa43680-22.html#R27
+            #Looks like that is the way to filter of off BP/RP flux excess, rather than equations similar to DR2("do not take in consideration the uncertainties on the flux excess factor")
+            #https://gea.esac.esa.int/archive/documentation/GEDR3/Data_processing/chap_cu5pho/cu5pho_sec_photProc/cu5pho_ssec_photVal.html
+            query = "SELECT ra, dec, bp_rp, \
+                phot_g_mean_flux, phot_g_mean_flux_error,  \
+                            phot_bp_mean_flux, phot_bp_mean_flux_error, \
+                            phot_rp_mean_flux, phot_rp_mean_flux_error \
+                            FROM gaiadr" + str(DR) + ".gaia_source \
+                            WHERE 1=CONTAINS( POINT('ICRS',ra,dec), BOX('ICRS'," + str(RA) + "," + str(DEC) + "," + str(RAD) + ", " + str(RAD) + ")) \
+                            AND phot_g_mean_mag<=22 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
+                            AND phot_bp_rp_excess_factor > (1.0 + 0.015*bp_rp*bp_rp) AND phot_bp_rp_excess_factor < (1.3 + 0.06*bp_rp*bp_rp) " \
+                            + str(color_range)
                             ## AND bp_rp >  0.6 AND bp_rp < 1.6 "
         print(query)
         
         EBV, gallong, gallat = galactic_extinction_and_coordinates(RA,DEC)
-        #sqlcl.gaia_query(file, query, EBV)	
+        print("FILE=",file)
+        sqlcl.gaia_query(file, query, EBV, DR=DR)	
 
         with open(file + '.cut.csv') as ref_cat:
             lines = ref_cat.readlines()
@@ -530,7 +562,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
             input_info[i]['HOLD_VARY'] = 'VARY'
 
         #panstarrs_info = [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r','i','z','y'] ]
-        panstarrs_info = [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r'] ] #holden# maybe chance this, or do join_cat (I think this is the r-band to anchor to)
+        panstarrs_info = [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'HOLD', 'ZP':0.} for c in ['r'] ]
 	    #panstarrs_info += [{'mag':c + 'PSFMag', 'plotName':'PanSTARRS ' + c, 'filter': 'PAN-STARRS.PS1.' + c + '.res', 'mag_err': c + 'PSFMagErr', 'HOLD_VARY':'VARY', 'ZP':0.} for c in ['z'] ]
 
         for filt_dict in panstarrs_info:
@@ -544,11 +576,24 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
 
         #gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr2_revised.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
         #gaia_info = [ {'mag':'ab_bp', 'plotName':'Gaia Gbp' , 'filter': 'Gaia_dr2_revised.bp.res', 'mag_err': 'phot_bp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
-        #gaia_info = {'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr2_revised.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
-        gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr2_revised.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
-                {'mag':'ab_bp', 'plotName':'Gaia Gbp' , 'filter': 'Gaia_dr2_revised.bp.res', 'mag_err': 'phot_bp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
-                {'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr2_revised.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.} ]
+        #gaia_info = [{'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr2_revised.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
         
+        #gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr2_revised.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
+        #        {'mag':'ab_bp', 'plotName':'Gaia Gbp' , 'filter': 'Gaia_dr2_revised.bp.res', 'mag_err': 'phot_bp_mean_mag_error', 'HOLD_VARY':'VARY', 'ZP':0.},\
+        #        {'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr2_revised.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'VARY', 'ZP':0.} ]
+
+        '''
+        gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr3.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
+                {'mag':'ab_bp', 'plotName':'Gaia Gbp' , 'filter': 'Gaia_dr3.bp.res', 'mag_err': 'phot_bp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.},\
+                {'mag':'ab_rp', 'plotName':'Gaia Grp' , 'filter': 'Gaia_dr3.rp.res', 'mag_err': 'phot_rp_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.} ]
+        '''
+        #holden# confirm the data in these files are correct
+        DR = 3 #cDR
+        if DR == 3:
+            gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr3.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
+        elif DR == 2:
+            gaia_info = [{'mag':'ab_g', 'plotName':'Gaia G' , 'filter': 'Gaia_dr2_revised.g.res', 'mag_err': 'phot_g_mean_mag_error', 'HOLD_VARY':'HOLD', 'ZP':0.}]
+
         for filt_dict in gaia_info:
             ''' avoid duplicate filters -- will override '''
             if filt_dict['mag'] not in [f['mag'] for f in input_info]:
@@ -583,7 +628,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
 
 
     ''' separate into mag ZPs to be held fixed and varied '''
-    info_hold = list(filter(lambda x: x['HOLD_VARY'] == 'HOLD',input_info))        
+    info_hold = list(filter(lambda x: x['HOLD_VARY'] == 'HOLD',input_info)) #make sure r and g show up here        
     info_vary = list(filter(lambda x: x['HOLD_VARY'] == 'VARY',input_info))        
 
     #info_hold.sort(sort_wavelength) 
@@ -726,7 +771,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     output_string = '' 
 
     if foundSDSS: 
-        output_string += '#  USED ' + str(foundSDSS) + ' MATCHED SDSS STARS \n'
+        output_string += '#  USED ' + str(foundpa) + ' MATCHED SDSS STARS \n'
     if found2MASS:
         output_string += '#  USED ' + str(found2MASS) + ' MATCHED 2MASS STARS \n'
     if foundPanSTARRS:
@@ -986,7 +1031,8 @@ def fit(table, input_info_unsorted, mag_locus,
 
                 print('good', good.sum())
                                                                                    
-                chi_squared_total = select_sum.sum()
+                #chi_squared_total = select_sum.sum()
+                chi_squared_total = np.nansum(select_sum) #holden# verify that it's okay to skip over nan values
                 data_points = select_good.sum()
                 print('data points', data_points)
                 print('stars', len(select_good))
@@ -1005,10 +1051,18 @@ def fit(table, input_info_unsorted, mag_locus,
                 stat_tot = chi_squared_total #select_diff.sum()
 
                 print('ZPs', dict(zip([a['mag'] for a in input_info] ,([zps_hold[a['mag']] for a in hold_input_info] + ['%.6f' % a for a in list(pars)]))))
+                #print("zps_hold values:", [zps_hold[a['mag']] for a in hold_input_info])
+                #print("pars:", list(pars))
+
+
                 
 
                 print('CURRENT TASK:', iteration)
                 print('STARS:', len(bands))
+
+                #print('select sum len:', len(select_sum))
+                #print('select sum:', select_sum)
+
                 print('chi^2', '%.5f' % stat_tot, )
                 print('degrees of freedom', '%d' % degrees_of_freedom, )
                 print('red chi^2', '%.5f' % redchi)
@@ -1244,12 +1298,15 @@ def fit(table, input_info_unsorted, mag_locus,
 
                         print(key, len(diff))
                   
-                        if len(diff) == 0:
-                            print('no stars have good measurements in relevant bands')
+                        if len(diff) == 0: #holden# this is always zero for gaia, need to figure out why (am I not anchoring to a band? or am I anchoring to all?)
+                            print('no stars have good measurements in relevant bands') #error here
                             raise Exception 
-                        median_instrumental = np.median(diff)
+                        median_instrumental = np.nanmedian(diff) #holden# verify that this is okay
                         locus_here = [mag_locus[x][input_info[i]['mag']] - mag_locus[x][info_hold[0]['mag']] for x in range(len(mag_locus))]
                         median_locus = np.median(locus_here)
+                        #print('diff:', diff)
+                        print('median indtrumental', median_instrumental)
+                        print('median locus', median_locus)
                         pinit.append(median_locus - median_instrumental)
 
 
@@ -1265,6 +1322,7 @@ def fit(table, input_info_unsorted, mag_locus,
             print(pinit)
 
             out = scipy.optimize.fmin(errfunc,pinit,maxiter=10000,maxfun=100000,ftol=0.00001,xtol=0.00001,args=()) 
+            print('STARTINGOUT:', out)
             if iteration == 'full':
                 errfunc(out,savefig=(iteration+'_'+outliers+'.png').replace('$',''))
             #print(out)
@@ -1275,9 +1333,8 @@ def fit(table, input_info_unsorted, mag_locus,
             print([zps_hold[a['mag']] for a in hold_input_info] )
 
             #[zps_hold[a['mag']] for a in hold_input_info] + 
-
+            print('ENDINGOUT:', list(out))
             residuals,dist,redchi,end_of_locus, num, ref_mags = errfunc(pars=list(out),residuals=True)
-
             #print(dist)
             #print('finished')
             #print('bands' , len(bands))

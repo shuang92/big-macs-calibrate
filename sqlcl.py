@@ -46,26 +46,41 @@ def query(sql,url=default_url,fmt=default_fmt):
     print(url+params)
     return urllib.urlopen(url+params)    
 
-def gaia_query(file, query, EBV):
+def gaia_query(file, query, EBV, DR):
     from astroquery.gaia import Gaia
     from astropy.table import Table
+    if (DR == 2):
+        Gaia.MAIN_GAIA_TABLE = "gaiadr2.gaia_source"  # Reselect Data Release 2
+    elif (DR == 3):
+        Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"  # Reselect Data Release 3, default
     import numpy as np
     ''' Que Gaia SQL server '''
     job = Gaia.launch_job_async(query)
-    gaia_data = job.get_results()
+    gaia_data = job.get_results() #Accessing data from query might be different for DR3 (different units??)
     print("obtained gaia data")
 
-
-	# calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams)
     colors = ['g','bp','rp']
-    coeffs = {'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
-	         'kbp':[1.1517, -0.0871, -0.0333, 0.0173, -0.0230, 0.0006, 0.0043], \
-		 'krp':[0.6104, -0.0170, -0.0026, -0.0017, -0.0078, 0.00005, 0.0006] }
-    
-    Av = 3.1 * EBV
+
+    Av = 3.1 * EBV #holden# is this still correct for DR3? Looks like it, both extinction at 550nm
     bp_rp = gaia_data['bp_rp']
-    c_terms = [np.ones(bp_rp.shape), bp_rp, bp_rp**2, bp_rp**3, Av, Av**2, bp_rp*Av]
-    
+	# calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams)
+    if (DR == 2):
+        coeffs = {  'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
+                    'kbp':[1.1517, -0.0871, -0.0333, 0.0173, -0.0230, 0.0006, 0.0043], \
+                    'krp':[0.6104, -0.0170, -0.0026, -0.0017, -0.0078, 0.00005, 0.0006] }
+        c_terms = [np.ones(bp_rp.shape), bp_rp, bp_rp**2, bp_rp**3, Av, Av**2, bp_rp*Av] 
+        #zps_ab = { 'g':25.7934, 'bp':25.3806, 'rp':25.1161} #DR2 - Don't Use
+        zps_ab = { 'g':25.7916, 'bp':25.3862, 'rp':25.1162} #DR2 Revised https://www.cosmos.esa.int/web/gaia/iow_20180316
+    elif (DR == 3):
+        #DR3 Coeffs https://www.cosmos.esa.int/web/gaia/edr3-extinction-law - Main Sequence - BPRP XName 
+        coeffs = {  'kg':[0.99596972154, -0.15972646030, 0.01223807382, 0.00090726555, -0.03771602639, 0.00151347495, -0.00002523645, 0.01145226581, -0.00093691499, -0.00026029677], \
+                    'kbp':[1.15363197483, -0.08140129917, -0.03601302398, 0.01921435856, -0.02239754824, 0.00084056268, -0.00001310180, 0.00660124080, -0.00088224750, -0.00011121576], \
+                    'krp':[0.66320787941, -0.01798471649, 0.00049376945, -0.00267994406, -0.00651422147, 0.00003301799, 0.00000157894, -0.00007980090, 0.00025567981, 0.00001104766] }
+        c_terms = [np.ones(bp_rp.shape), bp_rp, bp_rp**2, bp_rp**3, Av, Av**2, Av**3, Av*bp_rp, Av*(bp_rp**2), (Av**2)*bp_rp] #DR3 https://www.cosmos.esa.int/web/gaia/edr3-extinction-law
+        zps_ab = { 'g':25.8010 , 'bp':25.3540, 'rp':25.1040} #DR3 https://www.cosmos.esa.int/web/gaia/edr3-passbands AB ZPs
+
+
+
     k_g, k_bp, k_rp = 0.0, 0.0, 0.0
     for i in range(len(c_terms)):
         k_g += coeffs['kg'][i] * c_terms[i]
@@ -81,7 +96,6 @@ def gaia_query(file, query, EBV):
     gaia_data.add_column(a_rp)
 
 	# calculate magnitude  and err
-    zps_ab = { 'g':25.7934, 'bp':25.3806, 'rp':25.1161}
     for c in colors:
         ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c]  - gaia_data['a_' + c]) ## zp and ext
         ab_mag = Table.Column( name='ab_' + c, data = -2.5*np.log10( gaia_data['phot_' + c + '_mean_flux'] ) + zps_ab[c] ) ## zp but no ext
@@ -93,10 +107,11 @@ def gaia_query(file, query, EBV):
         gaia_data.remove_column('phot_' + c +'_mean_flux')
         gaia_data.remove_column('phot_' + c +'_mean_flux_error')
         
-    gaia_data.write(file + '.csv', format='ascii.csv', overwrite=True)
+    gaia_data.write(file + '.cut.csv', format='ascii.csv', overwrite=True)
+    #gaia_data.write(file + '.csv', format='ascii.csv', overwrite=True)
 
 
-def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'): #holden# problem here, code is directly from api, but errors
+def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'):
     '''
     import json, requests
     Send a line-of-sight reddening query to the Argonaut web server.
@@ -183,14 +198,6 @@ def panstarrs_ebv(lon, lat, coordsys='equ', mode='full'): #holden# problem here,
     ebv = sfd(coords)
     return ebv
 
-    print("REDDENING")
-    print(reddening)
-    print(lon)
-    print(lat)
-
-
-    #return 0.025999999999999995
-
 def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     "Apply several cuts and extinction correction to panstarrs catalog"
     from astropy.table import Table
@@ -235,8 +242,8 @@ def pan_catalog_cut(file, cat_raw_name, RA, DEC):
     
     ## dust extinction correction: http://argonaut.skymaps.info/
     ## coefficients: Schlafly & Finkbeiner, 2011
-    EBV = panstarrs_ebv(RA,DEC,mode='sfd') #holden# problem here, can I just pass in EBV from earlier method call? API doesn't work
-    #EBV = 0.025999999999999995
+    EBV = panstarrs_ebv(RA,DEC,mode='sfd') 
+
     coeffs = {'g':3.172, 'r':2.271, 'i':1.682, 'z':1.322, 'y':1.087}
     for psfMag, color in zip(psfMags, colors):
         catalog_raw[psfMag] -= EBV * coeffs[color]
