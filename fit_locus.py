@@ -215,27 +215,15 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
                             phot_rp_mean_flux, phot_rp_mean_flux_error \
                             FROM gaiadr" + str(DR) + ".gaia_source \
                             WHERE 1=CONTAINS( POINT('ICRS',ra,dec), BOX('ICRS'," + str(RA) + "," + str(DEC) + "," + str(RAD) + ", " + str(RAD) + ")) \
-                            AND phot_g_mean_mag<=22 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
+                            AND phot_g_mean_mag<=19 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
                             AND phot_bp_rp_excess_factor > (1.0 + 0.015*bp_rp*bp_rp) AND phot_bp_rp_excess_factor < (1.3 + 0.06*bp_rp*bp_rp) " \
                             + str(color_range)
                             ## AND bp_rp >  0.6 AND bp_rp < 1.6 "
             #AND phot_g_mean_mag<=19
         elif DR==3: 
-            #holden# maybe need to do something wit C*, bp_rp_excess_factor https://www.aanda.org/articles/aa/full_html/2023/06/aa43680-22/aa43680-22.html#R27
             #Looks like that is the way to filter of off BP/RP flux excess, rather than equations similar to DR2("do not take in consideration the uncertainties on the flux excess factor")
             #https://gea.esac.esa.int/archive/documentation/GEDR3/Data_processing/chap_cu5pho/cu5pho_sec_photProc/cu5pho_ssec_photVal.html
-            """
-            query = "SELECT ra, dec, bp_rp, \
-                phot_g_mean_flux, phot_g_mean_flux_error,  \
-                            phot_bp_mean_flux, phot_bp_mean_flux_error, \
-                            phot_rp_mean_flux, phot_rp_mean_flux_error \
-                            FROM gaiadr" + str(DR) + ".gaia_source \
-                            WHERE 1=CONTAINS( POINT('ICRS',ra,dec), BOX('ICRS'," + str(RA) + "," + str(DEC) + "," + str(RAD) + ", " + str(RAD) + ")) \
-                            AND phot_g_mean_mag<=22 AND phot_bp_mean_mag>=5 AND phot_rp_mean_mag>=5 \
-                            AND phot_bp_rp_excess_factor > (1.0 + 0.015*bp_rp*bp_rp) AND phot_bp_rp_excess_factor < (1.3 + 0.06*bp_rp*bp_rp) " \
-                            + str(color_range)
-                            ## AND bp_rp >  0.6 AND bp_rp < 1.6 "
-            """
+            
             #c_star mean is 0 (the ABS stuff is c_star, the excess factor - parens)
             query = f"""
             SELECT dr3.ra, dr3.dec, dr3.bp_rp,
@@ -247,7 +235,7 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
                     POINT('ICRS', ra, dec),
                     BOX('ICRS', {RA}, {DEC}, {RAD}, {RAD})
                 )
-                AND phot_g_mean_mag <= 22
+                AND phot_g_mean_mag <= 19
                 AND phot_bp_mean_mag >= 5
                 AND phot_rp_mean_mag >= 5
                 AND (
@@ -263,8 +251,6 @@ def get_survey_stars(file, inputcat, racol, deccol, necessary_columns, EBV, surv
             #465 found stars with no c_star filter at mag 22 cut, but bad ZPs ~.45 too big uniformly
 
 
-# Uncomment the following line if additional filters are needed
-# query += "AND c_star < 20000 AND bp_rp > 0.6 AND bp_rp < 1.6"
         print(query)
         
         EBV, gallong, gallat = galactic_extinction_and_coordinates(RA,DEC)
