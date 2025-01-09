@@ -64,6 +64,7 @@ def gaia_query(file, query, EBV, DR):
     Av = 3.1 * EBV #holden# is this still correct for DR3? Looks like it, both extinction at 550nm
     bp_rp = gaia_data['bp_rp']
 	# calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams)
+
     if (DR == 2):
         coeffs = {  'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
                     'kbp':[1.1517, -0.0871, -0.0333, 0.0173, -0.0230, 0.0006, 0.0043], \
