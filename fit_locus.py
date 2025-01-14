@@ -788,7 +788,7 @@ def run(file,columns_description,output_directory=None,plots_directory=None,exte
     output_string = '' 
 
     if foundSDSS: 
-        output_string += '#  USED ' + str(foundpa) + ' MATCHED SDSS STARS \n'
+        output_string += '#  USED ' + str(foundSDSS) + ' MATCHED SDSS STARS \n'
     if found2MASS:
         output_string += '#  USED ' + str(found2MASS) + ' MATCHED 2MASS STARS \n'
     if foundPanSTARRS:
