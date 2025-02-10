@@ -40,11 +40,12 @@ def filtercomment(sql):
 
 def query(sql,url=default_url,fmt=default_fmt):
     "Run query and return file object"
-    import urllib
-    fsql = filtercomment(sql)
-    params = urllib.urlencode({'cmd': fsql, 'format': fmt})
+    import urllib.parse
+    import urllib.request
+    
+    params = urllib.parse.urlencode({'cmd': sql, 'format': fmt})
     print(url+params)
-    return urllib.urlopen(url+params)    
+    return urllib.request.urlopen(url+params)  
 
 def gaia_query(file, query, EBV, DR):
     from astroquery.gaia import Gaia
@@ -61,10 +62,9 @@ def gaia_query(file, query, EBV, DR):
 
     colors = ['g','bp','rp']
 
-    Av = 3.1 * EBV #holden# is this still correct for DR3? Looks like it, both extinction at 550nm
+    Av = 3.1 * EBV
     bp_rp = gaia_data['bp_rp']
 	# calculate the extinction (Gaia Data Release 2:Observational Hertzsprung-Russell diagrams)
-
     if (DR == 2):
         coeffs = {  'kg':[0.9761, -0.1704, 0.0086, 0.0011, -0.0438, 0.0013, 0.0099], \
                     'kbp':[1.1517, -0.0871, -0.0333, 0.0173, -0.0230, 0.0006, 0.0043], \
